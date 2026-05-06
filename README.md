@@ -8,20 +8,17 @@ Le logiciel est pensé pour un usage simple : lancer l'exécutable, choisir les 
 
 - Application Windows portable, sans installateur.
 - Enregistrement du micro seul.
-- Enregistrement du micro avec tout le son Windows.
+- Enregistrement du micro avec tout le son du PC.
 - Enregistrement du micro avec le son d'une application ou d'une fenêtre précise, par exemple Teams, Chrome ou Edge.
-- Capture d'application basée sur l'audio loopback par processus Windows.
-- Vumètres séparés pour le son Windows/application et le micro.
-- Animation de vumètre lissée pour éviter les variations trop brusques.
-- Réglage du gain du micro.
-- Réglage du gain du son Windows/application.
-- Transcription locale avec `whisper.cpp`.
-- Choix du modèle de transcription :
-  - `small` : plus rapide et plus léger.
-  - `medium` : plus précis, mais plus lent et plus lourd.
-- Langue française sélectionnée par défaut.
+- Choix du micro à utiliser.
+- Choix du dossier de sortie.
+- Création automatique d'un fichier audio `.wav`.
+- Transcription locale avec `whisper.cpp`, sans API externe.
+- Choix du modèle de transcription `small` ou `medium`.
+- Choix de la langue de transcription, avec le français par défaut.
 - Import et transcription de fichiers audio ou vidéo existants.
-- Panneau de transcription avec copie du texte et ouverture du fichier `.txt`.
+- Création d'un fichier `.txt` à côté du fichier audio ou vidéo transcrit.
+- Boutons pour copier la transcription et ouvrir le fichier `.txt`.
 - Dossiers locaux créés à côté de l'application :
   - `Recordings`
   - `Logs`
