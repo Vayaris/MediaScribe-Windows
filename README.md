@@ -1,75 +1,105 @@
 # MediaScribe Windows
 
-MediaScribe Windows is a lightweight portable recorder and local transcription tool for Windows 10/11.
+MediaScribe Windows est une application Windows portable pour enregistrer le son du PC, le micro, puis transcrire l'audio localement.
 
-It records your microphone plus optional Windows audio, either from the full desktop output or from one selected application/window such as Teams, Chrome, Edge, or another process. Recordings are saved locally as `.wav`, then transcribed locally with `whisper.cpp` using the included `small` or `medium` model.
+Le logiciel est pensé pour un usage simple : lancer l'exécutable, choisir les sources audio, enregistrer, puis récupérer un fichier `.wav` et un fichier `.txt` de transcription. Tout fonctionne en local, sans serveur et sans API externe.
 
-No cloud transcription API is used.
+## Fonctionnalités
 
-## Features
-
-- Portable Windows app, no installer required.
-- Record microphone only, microphone plus full desktop audio, or microphone plus one application/process.
-- Application capture uses Windows process loopback audio.
-- Smooth audio meters for microphone and Windows/application audio.
-- Adjustable gain for microphone and Windows/application sources.
-- Local transcription with `whisper.cpp`.
-- Model selector: `small` or `medium`.
-- Language selector, French by default.
-- Import and transcribe existing audio/video files.
-- Transcript panel with copy and open `.txt` actions.
-- Local folders next to the app:
+- Application Windows portable, sans installateur.
+- Enregistrement du micro seul.
+- Enregistrement du micro avec tout le son Windows.
+- Enregistrement du micro avec le son d'une application ou d'une fenêtre précise, par exemple Teams, Chrome ou Edge.
+- Capture d'application basée sur l'audio loopback par processus Windows.
+- Vumètres séparés pour le son Windows/application et le micro.
+- Animation de vumètre lissée pour éviter les variations trop brusques.
+- Réglage du gain du micro.
+- Réglage du gain du son Windows/application.
+- Transcription locale avec `whisper.cpp`.
+- Choix du modèle de transcription :
+  - `small` : plus rapide et plus léger.
+  - `medium` : plus précis, mais plus lent et plus lourd.
+- Langue française sélectionnée par défaut.
+- Import et transcription de fichiers audio ou vidéo existants.
+- Panneau de transcription avec copie du texte et ouverture du fichier `.txt`.
+- Dossiers locaux créés à côté de l'application :
   - `Recordings`
   - `Logs`
   - `Settings`
   - `Tools`
   - `Models`
 
-## Download
+## Téléchargement
 
-For normal use, download the latest release from:
+La dernière version est disponible ici :
 
 https://github.com/Vayaris/MediaScribe-Windows/releases
 
-Recommended asset:
+Pour une utilisation complète, il faut télécharger le package portable :
 
-- `MediaScribeRecorder-Portable-UI-Fix.zip` or newer portable ZIP
+```text
+MediaScribeRecorder-Portable-v1.0.0.zip
+```
 
-The release may also include `MediaScribeRecorder.exe` as a direct app executable, but the full ZIP is recommended because transcription needs the `Tools` and `Models` folders beside the app.
+Ce package contient l'application, les outils de transcription, FFmpeg et les modèles Whisper.
 
-## How To Use
+La release contient aussi :
 
-1. Extract the portable ZIP.
-2. Run `MediaScribeRecorder.exe`.
-3. Choose whether to record Windows/application audio:
-   - uncheck `Enregistrer Windows / application` for microphone only
-   - choose `Tout le bureau` for full desktop sound
-   - choose `Application` and select a window/process for app-only audio
-4. Choose your microphone.
-5. Click `Enregistrer`.
-6. Click `Stop`.
-7. The recording is saved as `.wav` and transcription starts automatically.
-8. Copy the transcript or open the generated `.txt`.
+```text
+MediaScribeRecorder.exe
+```
 
-To transcribe an existing file, use `Importer et transcrire`.
+Cet exécutable direct permet de lancer l'application, mais pour profiter de la transcription locale sans rien configurer, le ZIP portable complet est recommandé.
 
-Supported import formats include:
+## Utilisation
+
+1. Télécharger `MediaScribeRecorder-Portable-v1.0.0.zip`.
+2. Extraire le ZIP dans le dossier de votre choix.
+3. Lancer `MediaScribeRecorder.exe`.
+4. Choisir si le son Windows ou application doit être enregistré :
+   - décocher `Enregistrer Windows / application` pour enregistrer uniquement le micro.
+   - choisir `Tout le bureau` pour enregistrer tout le son du PC.
+   - choisir `Application` pour enregistrer seulement une application ou une fenêtre.
+5. Choisir le micro.
+6. Choisir le dossier de sortie si besoin.
+7. Cliquer sur `Enregistrer`.
+8. Cliquer sur `Stop`.
+9. Le fichier `.wav` est créé automatiquement.
+10. La transcription démarre automatiquement si les outils et le modèle sont présents.
+11. Le fichier `.txt` est créé à côté du fichier audio.
+
+## Importer et transcrire un fichier
+
+Le bouton `Importer et transcrire` permet de transcrire un fichier déjà existant sans lancer d'enregistrement.
+
+Formats pris en charge :
 
 ```text
 .wav .mp3 .mp4 .m4a .aac .flac .ogg .webm .mkv .mov .avi
 ```
 
-## Settings
+Le fichier source n'est pas modifié. MediaScribe crée un fichier `.txt` à côté du fichier importé.
 
-Open `Paramètres` to adjust:
+## Paramètres
 
-- Windows/application gain.
-- Microphone gain.
-- Whisper model:
-  - `small`: faster and lighter
-  - `medium`: more accurate but slower and heavier
+Le bouton `Paramètres` permet de régler :
 
-## Portable Layout
+- le gain du son Windows/application ;
+- le gain du micro ;
+- le modèle Whisper utilisé pour la transcription.
+
+Modèles disponibles dans cette version :
+
+```text
+small
+medium
+```
+
+Le modèle `medium` est plus performant que `small`, mais il demande plus de ressources et peut être plus lent sur certaines machines.
+
+## Organisation portable
+
+Le dossier portable est organisé comme ceci :
 
 ```text
 MediaScribeRecorder.exe
@@ -88,56 +118,62 @@ Models/
   ggml-medium.bin
 ```
 
-## Build From Source
+Les enregistrements sont placés par défaut dans `Recordings`.
 
-Requirements:
+Les journaux d'erreur sont placés dans `Logs`.
 
-- Windows 10/11 x64.
+Les réglages sont placés dans `Settings/settings.json`.
+
+## Build depuis les sources
+
+Prérequis :
+
+- Windows 10 ou Windows 11 x64.
 - .NET 8 SDK.
-- Visual Studio 2022 Build Tools with C++ tools.
-- FFmpeg available in `PATH` if `Tools\ffmpeg.exe` and `Tools\ffprobe.exe` are not already present.
+- Visual Studio 2022 Build Tools avec les outils C++.
+- Windows SDK compatible avec la capture audio par processus.
+- FFmpeg disponible dans le `PATH`, sauf si `ffmpeg.exe` et `ffprobe.exe` sont déjà présents dans `Tools`.
 
-Build:
+Commande de build :
 
 ```powershell
 .\Build-Portable.ps1
 ```
 
-The script:
+Le script :
 
-1. Builds the native process-loopback helper.
-2. Downloads `whisper.cpp` Windows x64 binaries if needed.
-3. Copies `ffmpeg.exe` and `ffprobe.exe`.
-4. Downloads `ggml-small.bin` and `ggml-medium.bin` if needed.
-5. Publishes the self-contained Windows app.
+1. Compile le helper natif de capture audio par processus.
+2. Télécharge les binaires Windows x64 de `whisper.cpp` si besoin.
+3. Copie `ffmpeg.exe` et `ffprobe.exe`.
+4. Télécharge `ggml-small.bin` et `ggml-medium.bin` si besoin.
+5. Publie l'application Windows self-contained.
 
-Output:
+Sortie de build :
 
 ```text
 bin\Release\net8.0-windows10.0.20348.0\win-x64\publish
 ```
 
-## Relationship To MediaScribe
+## Différence avec MediaScribe serveur
 
-The original MediaScribe project is a self-hosted Ubuntu/Debian web app for local transcription.
+Le projet MediaScribe original est une solution serveur pour Linux, pensée pour tourner sur une VM ou un conteneur LXC Ubuntu/Debian avec une interface web.
 
-MediaScribe Windows is a separate portable Windows desktop tool focused on:
+MediaScribe Windows est un projet séparé, pensé pour Windows, avec une interface desktop portable. Son objectif est de capturer facilement le son du PC, d'une application et du micro, puis de transcrire localement l'audio.
 
-- capturing desktop/application audio plus microphone
-- saving a local audio file
-- transcribing locally with the same `whisper.cpp` approach
+## Confidentialité
 
-## Privacy
+Tout est exécuté localement sur l'ordinateur.
 
-Everything runs locally on your computer. Audio and transcripts are not sent to external transcription APIs.
+Les fichiers audio et les transcriptions ne sont pas envoyés à une API externe.
 
-## License Notes
+## Notes de licences
 
-This project uses:
+Ce projet utilise notamment :
 
-- `whisper.cpp` from ggml-org
-- FFmpeg
-- NAudio
-- Windows process loopback capture code based on public Windows audio APIs and bundled source under its included license
+- `whisper.cpp` de ggml-org ;
+- FFmpeg ;
+- NAudio ;
+- des APIs audio Windows ;
+- du code de capture process loopback Windows inclus avec sa licence.
 
-Review each dependency license before redistributing modified builds.
+Avant toute redistribution modifiée, il faut vérifier les licences des dépendances concernées.
