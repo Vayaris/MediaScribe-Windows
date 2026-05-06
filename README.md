@@ -35,21 +35,13 @@ La dernière version est disponible ici :
 
 https://github.com/Vayaris/MediaScribe-Windows/releases
 
-Pour une utilisation complète, il faut télécharger le package portable :
+Téléchargez uniquement le package portable complet :
 
 ```text
 MediaScribeRecorder-Portable-v1.0.0.zip
 ```
 
-Ce package contient l'application, les outils de transcription, FFmpeg et les modèles Whisper.
-
-La release contient aussi :
-
-```text
-MediaScribeRecorder.exe
-```
-
-Cet exécutable direct permet de lancer l'application, mais pour profiter de la transcription locale sans rien configurer, le ZIP portable complet est recommandé.
+Ce package contient tout ce qu'il faut : l'application, les outils de transcription, FFmpeg et les modèles Whisper. Après extraction, le fichier `MediaScribeRecorder.exe` est déjà présent dans le dossier.
 
 ## Utilisation
 
