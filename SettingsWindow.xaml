@@ -1,0 +1,50 @@
+<Window x:Class="MediaScribeRecorder.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Paramètres" Height="390" Width="520" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" Background="{StaticResource CanvasBrush}">
+  <Grid Margin="24">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+
+    <StackPanel Grid.Row="0">
+      <TextBlock Text="Paramètres" FontSize="24" FontWeight="Bold"/>
+      <TextBlock Text="Ajustez le niveau des sources et le modèle de transcription." Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0"/>
+    </StackPanel>
+
+    <StackPanel Grid.Row="1" Margin="0,24,0,0">
+      <DockPanel Margin="0,0,0,8">
+        <TextBlock Text="Gain Windows / application" FontWeight="SemiBold"/>
+        <TextBlock x:Name="SystemGainText" DockPanel.Dock="Right" Foreground="{StaticResource MutedBrush}"/>
+      </DockPanel>
+      <Slider x:Name="SystemGainSlider" Minimum="0.25" Maximum="3" TickFrequency="0.05" ValueChanged="OnGainChanged"/>
+    </StackPanel>
+
+    <StackPanel Grid.Row="2" Margin="0,22,0,0">
+      <DockPanel Margin="0,0,0,8">
+        <TextBlock Text="Gain micro" FontWeight="SemiBold"/>
+        <TextBlock x:Name="MicrophoneGainText" DockPanel.Dock="Right" Foreground="{StaticResource MutedBrush}"/>
+      </DockPanel>
+      <Slider x:Name="MicrophoneGainSlider" Minimum="0.25" Maximum="3" TickFrequency="0.05" ValueChanged="OnGainChanged"/>
+    </StackPanel>
+
+    <StackPanel Grid.Row="3" Margin="0,22,0,0">
+      <TextBlock Text="Modèle Whisper" FontWeight="SemiBold" Margin="0,0,0,8"/>
+      <ComboBox x:Name="ModelComboBox" SelectedValuePath="Tag">
+        <ComboBoxItem Content="Small - rapide, léger" Tag="small"/>
+        <ComboBoxItem Content="Medium - plus précis, plus lent" Tag="medium"/>
+      </ComboBox>
+      <TextBlock Text="Medium améliore souvent la transcription, mais demande plus de temps et plus de RAM." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,10,0,0"/>
+    </StackPanel>
+
+    <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
+      <Button Content="Annuler" Background="#687082" Margin="0,0,10,0" Click="OnCancel"/>
+      <Button Content="Enregistrer" Width="120" Click="OnSave"/>
+    </StackPanel>
+  </Grid>
+</Window>

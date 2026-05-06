@@ -1,0 +1,295 @@
+<Window x:Class="MediaScribeRecorder.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="MediaScribe Recorder" Height="820" Width="980" MinHeight="760" MinWidth="820"
+        Icon="Assets/Logo-MediaScribe-ICON.png"
+        Background="{StaticResource CanvasBrush}">
+  <Window.Resources>
+    <SolidColorBrush x:Key="FieldBrush" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="FieldHoverBrush" Color="#F9FBFD"/>
+    <SolidColorBrush x:Key="DisabledBrush" Color="#EEF1F5"/>
+    <Style TargetType="TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource InkBrush}"/>
+    </Style>
+    <Style TargetType="Button">
+      <Setter Property="MinHeight" Value="38"/>
+      <Setter Property="Padding" Value="16,8"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Background" Value="{StaticResource AccentBrush}"/>
+      <Setter Property="Foreground" Value="White"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="ButtonBorder" Background="{TemplateBinding Background}" CornerRadius="7" Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.9"/>
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.78"/>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="ButtonBorder" Property="Background" Value="{StaticResource DisabledBrush}"/>
+                <Setter Property="Foreground" Value="#7A8190"/>
+                <Setter Property="Cursor" Value="Arrow"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="ComboBox">
+      <Setter Property="MinHeight" Value="40"/>
+      <Setter Property="Padding" Value="12,0"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="Background" Value="{StaticResource FieldBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource LineBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ComboBox">
+            <Grid>
+              <ToggleButton x:Name="ToggleButton"
+                            IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                            ClickMode="Press"
+                            Focusable="False"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}">
+                <ToggleButton.Template>
+                  <ControlTemplate TargetType="ToggleButton">
+                    <Border x:Name="FieldBorder" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="7">
+                      <Grid>
+                        <Path Data="M 0 0 L 4 4 L 8 0 Z" Fill="#667085" Width="8" Height="4" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                      </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                      <Trigger Property="IsMouseOver" Value="True">
+                        <Setter TargetName="FieldBorder" Property="Background" Value="{StaticResource FieldHoverBrush}"/>
+                      </Trigger>
+                    </ControlTemplate.Triggers>
+                  </ControlTemplate>
+                </ToggleButton.Template>
+              </ToggleButton>
+              <ContentPresenter x:Name="ContentSite"
+                                IsHitTestVisible="False"
+                                Content="{TemplateBinding SelectionBoxItem}"
+                                ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                Margin="{TemplateBinding Padding}"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Left"/>
+              <Popup x:Name="Popup" Placement="Bottom" IsOpen="{TemplateBinding IsDropDownOpen}" AllowsTransparency="True" Focusable="False" PopupAnimation="Slide">
+                <Border Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="7" Padding="4" MinWidth="{TemplateBinding ActualWidth}">
+                  <ScrollViewer MaxHeight="260">
+                    <ItemsPresenter/>
+                  </ScrollViewer>
+                </Border>
+              </Popup>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Background" Value="{StaticResource DisabledBrush}"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="ComboBoxItem">
+      <Setter Property="Padding" Value="10,8"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+    </Style>
+    <Style TargetType="TextBox">
+      <Setter Property="MinHeight" Value="40"/>
+      <Setter Property="Padding" Value="12,7"/>
+      <Setter Property="Background" Value="{StaticResource FieldBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource LineBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="TextBox">
+            <Border x:Name="FieldBorder" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="7">
+              <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="FieldBorder" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="ProgressBar">
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ProgressBar">
+            <Border Background="#E7ECF4" CornerRadius="6" ClipToBounds="True">
+              <Grid x:Name="PART_Track">
+                <Rectangle x:Name="PART_Indicator" HorizontalAlignment="Left" Fill="{StaticResource AccentBrush}" RadiusX="6" RadiusY="6"/>
+              </Grid>
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+  </Window.Resources>
+
+  <Grid Margin="28">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+
+    <StackPanel Grid.Row="0" Margin="0,0,0,22">
+      <Image Source="Assets/Logo-MediaScribe-Full.png" Height="74" Width="340" HorizontalAlignment="Left" Stretch="Uniform"/>
+      <TextBlock Text="Enregistrement local du son Windows et du micro, avec transcription portable." Foreground="{StaticResource MutedBrush}" FontSize="14" Margin="4,4,0,0"/>
+    </StackPanel>
+
+    <Border Grid.Row="1" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="8" Padding="22">
+      <Grid>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="1.2*"/>
+            <ColumnDefinition Width="2*"/>
+          </Grid.ColumnDefinitions>
+          <StackPanel Grid.Column="0" Margin="0,0,18,0">
+            <CheckBox x:Name="IncludeSystemAudioCheckBox" Content="Enregistrer Windows / application" FontWeight="SemiBold" IsChecked="True" Margin="0,0,0,8" Checked="OnIncludeSystemAudioChanged" Unchecked="OnIncludeSystemAudioChanged"/>
+            <StackPanel x:Name="SystemModePanel" Orientation="Horizontal">
+              <RadioButton x:Name="DesktopModeRadio" Content="Tout le bureau" IsChecked="True" Margin="0,0,18,0" Checked="OnSystemModeChanged"/>
+              <RadioButton x:Name="ApplicationModeRadio" Content="Application" Checked="OnSystemModeChanged"/>
+            </StackPanel>
+          </StackPanel>
+          <StackPanel Grid.Column="1">
+            <TextBlock Text="Application ou fenêtre" FontWeight="SemiBold" Margin="0,0,0,8"/>
+            <DockPanel>
+              <Button x:Name="SettingsButton" Content="Paramètres" DockPanel.Dock="Right" Margin="10,0,0,0" Click="OnOpenSettings"/>
+              <Button x:Name="RefreshProcessesButton" Content="Actualiser" DockPanel.Dock="Right" Margin="10,0,0,0" Click="OnRefreshProcesses"/>
+              <ComboBox x:Name="ProcessComboBox" IsEnabled="False" SelectedValuePath="ProcessId">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                      <Image Source="{Binding Icon}" Width="18" Height="18" Margin="0,0,8,0"/>
+                      <TextBlock Text="{Binding DisplayName}" VerticalAlignment="Center"/>
+                    </StackPanel>
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+            </DockPanel>
+          </StackPanel>
+        </Grid>
+
+        <StackPanel Grid.Row="1" Margin="0,22,0,0">
+          <TextBlock Text="Micro" FontWeight="SemiBold" Margin="0,0,0,8"/>
+          <ComboBox x:Name="MicrophoneComboBox" SelectedValuePath="Id">
+            <ComboBox.ItemTemplate>
+              <DataTemplate>
+                <TextBlock Text="{Binding Name}"/>
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+        </StackPanel>
+
+        <Grid Grid.Row="2" Margin="0,22,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+          </Grid.ColumnDefinitions>
+          <StackPanel Grid.Column="0">
+            <TextBlock Text="Dossier de sortie" FontWeight="SemiBold" Margin="0,0,0,8"/>
+            <TextBox x:Name="OutputFolderTextBox"/>
+          </StackPanel>
+          <Button Grid.Column="1" Content="Choisir" Margin="10,26,0,0" Click="OnChooseOutputFolder"/>
+        </Grid>
+
+        <Grid Grid.Row="3" Margin="0,28,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="*"/>
+          </Grid.ColumnDefinitions>
+          <StackPanel Grid.Column="0" Margin="0,0,12,0">
+            <DockPanel Margin="0,0,0,8">
+              <TextBlock Text="Windows" FontWeight="SemiBold"/>
+              <TextBlock x:Name="SystemLevelText" Text="0%" DockPanel.Dock="Right" Foreground="{StaticResource MutedBrush}"/>
+            </DockPanel>
+            <ProgressBar x:Name="SystemLevelBar" Height="18" Minimum="0" Maximum="1"/>
+          </StackPanel>
+          <StackPanel Grid.Column="1" Margin="12,0,0,0">
+            <DockPanel Margin="0,0,0,8">
+              <TextBlock Text="Micro" FontWeight="SemiBold"/>
+              <TextBlock x:Name="MicLevelText" Text="0%" DockPanel.Dock="Right" Foreground="{StaticResource MutedBrush}"/>
+            </DockPanel>
+            <ProgressBar x:Name="MicLevelBar" Height="18" Minimum="0" Maximum="1"/>
+          </StackPanel>
+        </Grid>
+
+        <Border Grid.Row="4" Margin="0,28,0,0" Background="#F8FAFD" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="8" Padding="18">
+          <Grid>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <StackPanel Orientation="Horizontal">
+              <Button x:Name="RecordButton" Content="Enregistrer" Width="150" Click="OnRecord"/>
+              <Button x:Name="StopButton" Content="Stop" Width="110" Margin="10,0,0,0" Background="{StaticResource DangerBrush}" IsEnabled="False" Click="OnStop"/>
+              <TextBlock x:Name="StatusText" Text="Prêt" VerticalAlignment="Center" Margin="18,0,0,0" FontWeight="SemiBold"/>
+            </StackPanel>
+            <TextBlock x:Name="CurrentFileText" Grid.Row="1" Text="" Foreground="{StaticResource MutedBrush}" Margin="0,14,0,0" TextWrapping="Wrap"/>
+          </Grid>
+        </Border>
+
+        <Border Grid.Row="5" Margin="0,18,0,0" Background="#F8FAFD" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="8" Padding="18">
+          <Grid>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="*"/>
+              <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <Grid Grid.Row="0">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="190"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <TextBlock Grid.Column="0" Text="Langue" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0"/>
+              <ComboBox Grid.Column="1" x:Name="LanguageComboBox" SelectedValuePath="Code" SelectionChanged="OnLanguageChanged">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Text="{Binding Name}"/>
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+              <Button Grid.Column="2" x:Name="ImportTranscribeButton" Content="Importer et transcrire" Margin="12,0,0,0" Click="OnImportTranscribe"/>
+              <Button Grid.Column="3" x:Name="CancelTranscriptionButton" Content="Annuler" Margin="10,0,0,0" Background="{StaticResource DangerBrush}" IsEnabled="False" Click="OnCancelTranscription"/>
+              <Button Grid.Column="4" x:Name="CopyTranscriptButton" Content="Copier" Margin="10,0,0,0" IsEnabled="False" Click="OnCopyTranscript"/>
+              <Button Grid.Column="5" x:Name="OpenTranscriptButton" Content="Ouvrir le .txt" Margin="10,0,0,0" HorizontalAlignment="Left" IsEnabled="False" Click="OnOpenTranscript"/>
+            </Grid>
+            <TextBlock Grid.Row="1" x:Name="TranscriptionStatusText" Text="Transcription prête" Foreground="{StaticResource MutedBrush}" Margin="0,12,0,8" TextWrapping="Wrap"/>
+            <TextBox Grid.Row="2" x:Name="TranscriptTextBox" MinHeight="160" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" IsReadOnly="True"/>
+            <TextBlock Grid.Row="3" x:Name="TranscriptFileText" Text="" Foreground="{StaticResource MutedBrush}" Margin="0,10,0,0" TextWrapping="Wrap"/>
+          </Grid>
+        </Border>
+      </Grid>
+    </Border>
+
+    <TextBlock Grid.Row="2" x:Name="FooterText" Margin="0,14,0,0" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
+  </Grid>
+</Window>
