@@ -25,6 +25,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        FitWindowToWorkArea();
         settingsStore = new SettingsStore(paths);
         log = new LogService(paths);
         transcription = new TranscriptionService(paths, log);
@@ -41,6 +42,16 @@ public partial class MainWindow : Window
         UpdateModeState();
         UpdateTranscriptionAvailability();
         isInitialized = true;
+    }
+
+    private void FitWindowToWorkArea()
+    {
+        const double screenPadding = 32;
+        var workArea = SystemParameters.WorkArea;
+        MaxHeight = Math.Max(MinHeight, workArea.Height - screenPadding);
+        MaxWidth = Math.Max(MinWidth, workArea.Width - screenPadding);
+        Height = Math.Min(Height, MaxHeight);
+        Width = Math.Min(Width, MaxWidth);
     }
 
     private void LoadLanguages()
