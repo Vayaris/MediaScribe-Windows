@@ -1,5 +1,6 @@
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
+using System.Diagnostics;
 
 namespace MediaScribeRecorder.Services;
 
@@ -84,23 +85,40 @@ public sealed class RecordingSession : IDisposable
 
     private void WriteLoop(CancellationToken token)
     {
-        var systemBuffer = new float[TargetSampleRate * TargetChannels / 50];
-        var micBuffer = new float[systemBuffer.Length];
-        var mix = new float[systemBuffer.Length];
+        const int maxChunkMilliseconds = 100;
+        var maxSamples = TargetSampleRate * TargetChannels * maxChunkMilliseconds / 1000;
+        var systemBuffer = new float[maxSamples];
+        var micBuffer = new float[maxSamples];
+        var mix = new float[maxSamples];
         var outputBytes = new byte[mix.Length * 2];
-        var interval = TimeSpan.FromMilliseconds(20);
+        var stopwatch = Stopwatch.StartNew();
+        long samplesWritten = 0;
 
         while (!token.IsCancellationRequested)
         {
-            var started = DateTime.UtcNow;
+            var elapsedSamples = (long)(stopwatch.Elapsed.TotalSeconds * TargetSampleRate) * TargetChannels;
+            var samplesDue = elapsedSamples - samplesWritten;
+            if (samplesDue <= 0)
+            {
+                token.WaitHandle.WaitOne(TimeSpan.FromMilliseconds(5));
+                continue;
+            }
+
+            var samplesToWrite = (int)Math.Min(samplesDue, maxSamples);
+            samplesToWrite -= samplesToWrite % TargetChannels;
+            if (samplesToWrite <= 0)
+            {
+                continue;
+            }
+
             Array.Clear(mix);
 
-            var systemRead = systemSource.Read(systemBuffer, systemBuffer.Length);
-            var micRead = micSource.Read(micBuffer, micBuffer.Length);
+            var systemRead = systemSource.Read(systemBuffer, samplesToWrite);
+            var micRead = micSource.Read(micBuffer, samplesToWrite);
 
             var systemLevel = Math.Clamp(systemSource.LatestPeak * systemGain, 0f, 1f);
             var micLevel = Math.Clamp(micSource.LatestPeak * microphoneGain, 0f, 1f);
-            for (var i = 0; i < mix.Length; i++)
+            for (var i = 0; i < samplesToWrite; i++)
             {
                 var sample = 0f;
                 if (i < systemRead)
@@ -116,20 +134,14 @@ public sealed class RecordingSession : IDisposable
                 mix[i] = Math.Clamp(sample, -1f, 1f);
             }
 
-            FloatToPcm16(mix, outputBytes);
+            FloatToPcm16(mix, samplesToWrite, outputBytes);
             lock (sync)
             {
-                writer.Write(outputBytes, 0, outputBytes.Length);
+                writer.Write(outputBytes, 0, samplesToWrite * 2);
             }
+            samplesWritten += samplesToWrite;
 
             LevelsUpdated?.Invoke(this, new RecordingLevelsEventArgs(systemLevel, micLevel));
-
-            var elapsed = DateTime.UtcNow - started;
-            var sleep = interval - elapsed;
-            if (sleep > TimeSpan.Zero)
-            {
-                token.WaitHandle.WaitOne(sleep);
-            }
         }
     }
 
@@ -168,9 +180,9 @@ public sealed class RecordingSession : IDisposable
         return Math.Clamp(peak, 0f, 1f);
     }
 
-    private static void FloatToPcm16(float[] samples, byte[] bytes)
+    private static void FloatToPcm16(float[] samples, int count, byte[] bytes)
     {
-        for (var i = 0; i < samples.Length; i++)
+        for (var i = 0; i < count; i++)
         {
             var value = (short)Math.Clamp(samples[i] * short.MaxValue, short.MinValue, short.MaxValue);
             var byteIndex = i * 2;
