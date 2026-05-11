@@ -102,6 +102,17 @@ public sealed class TranscriptionService
                 whisperArgs.Add("-l");
                 whisperArgs.Add(normalizedLanguage);
             }
+            whisperArgs.Add("-sns");
+            if (NormalizeModel(model) == "medium")
+            {
+                whisperArgs.Add("-nf");
+            }
+            else
+            {
+                whisperArgs.Add("-lpt");
+                whisperArgs.Add("-0.30");
+            }
+
             whisperArgs.AddRange(["-otxt", "-of", whisperPrefix, "-pp"]);
 
             await RunProcessAsync(
@@ -117,7 +128,7 @@ public sealed class TranscriptionService
                 throw new InvalidOperationException("whisper.cpp n'a pas produit de fichier transcript.");
             }
 
-            var text = (await File.ReadAllTextAsync(generated, Encoding.UTF8, cancellationToken).ConfigureAwait(false)).Trim();
+            var text = CleanTranscript(await File.ReadAllTextAsync(generated, Encoding.UTF8, cancellationToken).ConfigureAwait(false));
             await File.WriteAllTextAsync(transcriptPath, text + Environment.NewLine, Encoding.UTF8, cancellationToken).ConfigureAwait(false);
             progress?.Report(new TranscriptionProgress("Terminé", 100, "done"));
             return new TranscriptionResult(mediaPath, transcriptPath, text);
@@ -315,6 +326,30 @@ public sealed class TranscriptionService
     {
         if (text.Length <= maxLength) return text;
         return text[^maxLength..];
+    }
+
+    private static string CleanTranscript(string text)
+    {
+        var blocked = new[]
+        {
+            "Sous-titres réalisés par la communauté d'Amara.org",
+            "Sous-titres réalisés par la communauté d’Amara.org",
+            "*Musique d'outro*",
+            "Musique d'outro",
+            "Alright !",
+            "Alright!",
+        };
+
+        var lines = text
+            .Replace("\r", "")
+            .Split('\n')
+            .Select(line => line.Trim())
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .Where(line => line != "...")
+            .Where(line => !blocked.Any(blockedText => line.Equals(blockedText, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        return string.Join(Environment.NewLine, lines).Trim();
     }
 
     private static string NormalizeModel(string model)
