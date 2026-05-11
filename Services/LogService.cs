@@ -4,6 +4,7 @@ public sealed class LogService
 {
     private readonly PortableAppPaths paths;
     private readonly object sync = new();
+    private bool headerWritten;
 
     public LogService(PortableAppPaths paths)
     {
@@ -21,6 +22,12 @@ public sealed class LogService
     {
         lock (sync)
         {
+            if (!headerWritten)
+            {
+                headerWritten = true;
+                File.AppendAllText(paths.LogFile, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [INFO] MediaScribe Recorder {AppVersion.Current} | App={paths.Root} | Data={paths.UserRoot}{Environment.NewLine}");
+            }
+
             File.AppendAllText(paths.LogFile, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [{level}] {message}{Environment.NewLine}");
         }
     }

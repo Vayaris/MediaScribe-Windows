@@ -5,13 +5,17 @@ public sealed class PortableAppPaths
     public PortableAppPaths()
     {
         var baseDir = AppContext.BaseDirectory;
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var userRoot = Path.Combine(appData, "MediaScribe Recorder");
         Root = baseDir;
-        Recordings = Path.Combine(baseDir, "Recordings");
-        Logs = Path.Combine(baseDir, "Logs");
-        Settings = Path.Combine(baseDir, "Settings");
+        UserRoot = userRoot;
+        Recordings = Path.Combine(userRoot, "Recordings");
+        Logs = Path.Combine(userRoot, "Logs");
+        Settings = Path.Combine(userRoot, "Settings");
         Tools = Path.Combine(baseDir, "Tools");
         Models = Path.Combine(baseDir, "Models");
 
+        Directory.CreateDirectory(UserRoot);
         Directory.CreateDirectory(Recordings);
         Directory.CreateDirectory(Logs);
         Directory.CreateDirectory(Settings);
@@ -20,6 +24,7 @@ public sealed class PortableAppPaths
     }
 
     public string Root { get; }
+    public string UserRoot { get; }
     public string Recordings { get; }
     public string Logs { get; }
     public string Settings { get; }

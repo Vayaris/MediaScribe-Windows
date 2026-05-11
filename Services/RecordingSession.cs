@@ -98,8 +98,8 @@ public sealed class RecordingSession : IDisposable
             var systemRead = systemSource.Read(systemBuffer, systemBuffer.Length);
             var micRead = micSource.Read(micBuffer, micBuffer.Length);
 
-            var systemLevel = Peak(systemBuffer, systemRead, systemGain);
-            var micLevel = Peak(micBuffer, micRead, microphoneGain);
+            var systemLevel = Math.Clamp(systemSource.LatestPeak * systemGain, 0f, 1f);
+            var micLevel = Math.Clamp(micSource.LatestPeak * microphoneGain, 0f, 1f);
             for (var i = 0; i < mix.Length; i++)
             {
                 var sample = 0f;
@@ -196,7 +196,7 @@ public sealed class RecordingSession : IDisposable
         {
             buffered = new BufferedWaveProvider(capture.WaveFormat)
             {
-                BufferDuration = TimeSpan.FromSeconds(5),
+                BufferDuration = TimeSpan.FromMilliseconds(750),
                 DiscardOnBufferOverflow = true,
                 ReadFully = false,
             };
@@ -205,6 +205,7 @@ public sealed class RecordingSession : IDisposable
             {
                 if (args.BytesRecorded > 0)
                 {
+                    LatestPeak = EstimatePeak(args.Buffer, args.BytesRecorded, capture.WaveFormat);
                     buffered.AddSamples(args.Buffer, 0, args.BytesRecorded);
                 }
             };
@@ -225,6 +226,7 @@ public sealed class RecordingSession : IDisposable
         }
 
         public string Name { get; }
+        public float LatestPeak { get; private set; }
 
         public int Read(float[] buffer, int count)
         {
@@ -237,6 +239,40 @@ public sealed class RecordingSession : IDisposable
             {
                 return 0;
             }
+        }
+
+        private static float EstimatePeak(byte[] buffer, int bytesRecorded, WaveFormat format)
+        {
+            var peak = 0f;
+            if (format.Encoding == WaveFormatEncoding.IeeeFloat && format.BitsPerSample == 32)
+            {
+                for (var i = 0; i + 3 < bytesRecorded; i += 4)
+                {
+                    peak = Math.Max(peak, Math.Abs(BitConverter.ToSingle(buffer, i)));
+                }
+            }
+            else if (format.BitsPerSample == 16)
+            {
+                for (var i = 0; i + 1 < bytesRecorded; i += 2)
+                {
+                    peak = Math.Max(peak, Math.Abs(BitConverter.ToInt16(buffer, i) / (float)short.MaxValue));
+                }
+            }
+            else if (format.BitsPerSample == 24)
+            {
+                for (var i = 0; i + 2 < bytesRecorded; i += 3)
+                {
+                    var sample = buffer[i] | (buffer[i + 1] << 8) | (buffer[i + 2] << 16);
+                    if ((sample & 0x800000) != 0)
+                    {
+                        sample |= unchecked((int)0xff000000);
+                    }
+
+                    peak = Math.Max(peak, Math.Abs(sample / 8388608f));
+                }
+            }
+
+            return Math.Clamp(peak, 0f, 1f);
         }
     }
 }

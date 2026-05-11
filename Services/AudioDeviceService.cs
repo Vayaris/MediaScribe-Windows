@@ -16,12 +16,19 @@ public sealed class AudioDeviceService
     public MMDevice GetCaptureDevice(string? id)
     {
         using var enumerator = new MMDeviceEnumerator();
-        if (!string.IsNullOrWhiteSpace(id))
+        try
         {
-            return enumerator.GetDevice(id);
-        }
+            if (!string.IsNullOrWhiteSpace(id))
+            {
+                return enumerator.GetDevice(id);
+            }
 
-        return enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Communications);
+            return enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Communications);
+        }
+        catch (Exception ex)
+        {
+            throw new UserFacingException("REC-MIC-001", "Micro indisponible. Vérifiez le micro sélectionné dans Windows ou choisissez un autre périphérique.", ex);
+        }
     }
 
     public MMDevice GetDefaultRenderDevice()

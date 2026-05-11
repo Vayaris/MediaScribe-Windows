@@ -35,7 +35,7 @@ public partial class MainWindow : Window
         transcription = new TranscriptionService(paths, log);
         settings = settingsStore.Load();
         OutputFolderTextBox.Text = settings.OutputFolder;
-        FooterText.Text = $"Portable: {paths.Root}";
+        FooterText.Text = $"Application: {paths.Root} | Données: {paths.UserRoot}";
 
         LoadMicrophones();
         LoadProcesses();
@@ -147,12 +147,13 @@ public partial class MainWindow : Window
         try
         {
             SaveCurrentSettings();
-            Directory.CreateDirectory(settings.OutputFolder);
+            PathValidator.EnsureWritableDirectory(settings.OutputFolder);
 
             var outputPath = Path.Combine(settings.OutputFolder, $"MediaScribe-{DateTime.Now:yyyyMMdd-HHmmss}.wav");
             var micDevice = audioDevices.GetCaptureDevice(settings.MicrophoneDeviceId);
             IAudioCaptureSource micCapture = new WasapiCaptureSource(micDevice);
             IAudioCaptureSource systemCapture;
+            ProcessLoopbackCaptureSource? processCapture = null;
 
             if (IncludeSystemAudioCheckBox.IsChecked != true)
             {
@@ -165,7 +166,8 @@ public partial class MainWindow : Window
                     throw new InvalidOperationException("Choisissez une application à enregistrer.");
                 }
 
-                systemCapture = new ProcessLoopbackCaptureSource(selectedProcess.ProcessId);
+                processCapture = new ProcessLoopbackCaptureSource(selectedProcess.ProcessId);
+                systemCapture = processCapture;
             }
             else
             {
@@ -181,6 +183,14 @@ public partial class MainWindow : Window
             StopButton.IsEnabled = true;
             StatusText.Text = "Enregistrement";
             CurrentFileText.Text = outputPath;
+
+            if (processCapture is not null && !await processCapture.WaitForAudioAsync(TimeSpan.FromSeconds(3), CancellationToken.None))
+            {
+                var warning = "REC-APP-002 - Capture application démarrée, mais aucun son n'a été reçu. Lancez du son dans cette application ou utilisez Tout le bureau.";
+                log.Info(warning);
+                await StopCurrentSession(transcribeAfterStop: false);
+                MessageBox.Show(this, warning, "Capture application", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
         }
         catch (Exception ex)
         {
@@ -409,8 +419,9 @@ public partial class MainWindow : Window
     private void UpdateTranscriptionAvailability()
     {
         var model = string.IsNullOrWhiteSpace(settings.WhisperModel) ? "small" : settings.WhisperModel;
+        var ready = transcription.IsReady(model);
         SetTranscriptionProgress(
-            transcription.IsReady(model) ? $"Transcription prête ({model})" : transcription.MissingToolsMessage(model),
+            ready ? $"Transcription prête ({model})" : $"{transcription.MissingToolsCode(model)} - {transcription.MissingToolsMessage(model)}",
             0);
     }
 

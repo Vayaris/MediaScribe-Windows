@@ -96,6 +96,7 @@ public sealed class ProcessLoopbackCaptureSource : IAudioCaptureSource
     private Process? process;
     private CancellationTokenSource? readerCts;
     private Task? readerTask;
+    private TaskCompletionSource<bool> firstData = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public ProcessLoopbackCaptureSource(int processId)
     {
@@ -106,6 +107,7 @@ public sealed class ProcessLoopbackCaptureSource : IAudioCaptureSource
 
     public int ProcessId { get; }
     public WaveFormat WaveFormat { get; }
+    public bool HasReceivedAudio { get; private set; }
     public event EventHandler<WaveInEventArgs>? DataAvailable;
     public event EventHandler<StoppedEventArgs>? RecordingStopped;
 
@@ -114,7 +116,7 @@ public sealed class ProcessLoopbackCaptureSource : IAudioCaptureSource
         var helper = Path.Combine(AppContext.BaseDirectory, "Tools", "MediaScribeProcessLoopback.exe");
         if (!File.Exists(helper))
         {
-            throw new FileNotFoundException("Module de capture application introuvable.", helper);
+            throw new UserFacingException("REC-APP-001", $"Module de capture application introuvable: {helper}");
         }
 
         File.Delete(stopFile);
@@ -131,8 +133,31 @@ public sealed class ProcessLoopbackCaptureSource : IAudioCaptureSource
         startInfo.ArgumentList.Add("-");
         startInfo.ArgumentList.Add(stopFile);
 
-        process = Process.Start(startInfo) ?? throw new InvalidOperationException("Impossible de démarrer la capture application.");
+        try
+        {
+            process = Process.Start(startInfo) ?? throw new UserFacingException("REC-APP-001", "Impossible de démarrer la capture application.");
+        }
+        catch (UserFacingException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new UserFacingException("REC-APP-001", "Impossible de démarrer la capture application.", ex);
+        }
+
         readerTask = Task.Run(() => ReadLoop(process, readerCts.Token));
+    }
+
+    public async Task<bool> WaitForAudioAsync(TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        if (HasReceivedAudio)
+        {
+            return true;
+        }
+
+        var completed = await Task.WhenAny(firstData.Task, Task.Delay(timeout, cancellationToken)).ConfigureAwait(false);
+        return completed == firstData.Task && firstData.Task.Result;
     }
 
     public void Stop()
@@ -185,6 +210,8 @@ public sealed class ProcessLoopbackCaptureSource : IAudioCaptureSource
 
                 var copy = new byte[read];
                 Buffer.BlockCopy(buffer, 0, copy, 0, read);
+                HasReceivedAudio = true;
+                firstData.TrySetResult(true);
                 DataAvailable?.Invoke(this, new WaveInEventArgs(copy, read));
             }
 
@@ -205,6 +232,10 @@ public sealed class ProcessLoopbackCaptureSource : IAudioCaptureSource
         catch (Exception ex)
         {
             RecordingStopped?.Invoke(this, new StoppedEventArgs(ex));
+        }
+        finally
+        {
+            firstData.TrySetResult(false);
         }
     }
 }

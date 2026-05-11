@@ -32,6 +32,16 @@ public sealed class TranscriptionService
         return missing.Count == 0 ? "" : "Transcription indisponible: " + string.Join(", ", missing);
     }
 
+    public string MissingToolsCode(string model)
+    {
+        if (!File.Exists(ModelPath(model)))
+        {
+            return "TRN-MODEL-001";
+        }
+
+        return "TRN-TOOL-001";
+    }
+
     public async Task<TranscriptionResult> TranscribeAsync(
         string mediaPath,
         string language,
@@ -41,12 +51,12 @@ public sealed class TranscriptionService
     {
         if (!File.Exists(mediaPath))
         {
-            throw new FileNotFoundException("Fichier audio introuvable.", mediaPath);
+            throw new UserFacingException("TRN-INPUT-001", $"Fichier audio introuvable: {mediaPath}");
         }
 
         if (!IsReady(model))
         {
-            throw new InvalidOperationException(MissingToolsMessage(model));
+            throw new UserFacingException(MissingToolsCode(model), MissingToolsMessage(model));
         }
 
         var outputPrefix = Path.Combine(
@@ -183,7 +193,7 @@ public sealed class TranscriptionService
 
         if (!process.Start())
         {
-            throw new InvalidOperationException($"Impossible de démarrer {Path.GetFileName(fileName)}.");
+            throw new UserFacingException("TRN-TOOL-002", $"Impossible de démarrer {Path.GetFileName(fileName)}.");
         }
 
         process.BeginOutputReadLine();
@@ -206,7 +216,7 @@ public sealed class TranscriptionService
         await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
         if (process.ExitCode != 0)
         {
-            throw new InvalidOperationException($"{Path.GetFileName(fileName)} a échoué: {Tail(output.ToString(), 2500)}");
+            throw new UserFacingException("TRN-TOOL-003", $"{Path.GetFileName(fileName)} a échoué: {Tail(output.ToString(), 2500)}");
         }
     }
 

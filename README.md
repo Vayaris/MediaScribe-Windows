@@ -4,12 +4,15 @@ MediaScribe Windows est une application Windows portable pour enregistrer le son
 
 Le logiciel est pensé pour un usage simple : lancer l'exécutable, choisir les sources audio, enregistrer, puis récupérer un fichier `.wav` et un fichier `.txt` de transcription. Tout fonctionne en local, sans serveur et sans API externe.
 
+À partir de la v1.1.0, les données utilisateur sont stockées dans `%LOCALAPPDATA%\MediaScribe Recorder\`. Cela permet de garder les enregistrements, réglages, logs et historiques au même endroit même si vous changez de version du ZIP portable.
+
 ## Fonctionnalités
 
 - Application Windows portable, sans installateur.
 - Enregistrement du micro seul.
 - Enregistrement du micro avec tout le son du PC.
 - Enregistrement du micro avec le son d'une application ou d'une fenêtre précise, par exemple Teams, Chrome ou Edge.
+- Diagnostic clair si la capture d'application ne reçoit aucun son.
 - Choix du micro à utiliser.
 - Choix du dossier de sortie.
 - Création automatique d'un fichier audio `.wav`.
@@ -21,10 +24,8 @@ Le logiciel est pensé pour un usage simple : lancer l'exécutable, choisir les 
 - Création d'un fichier `.txt` à côté du fichier audio ou vidéo transcrit.
 - Boutons pour copier la transcription et ouvrir le fichier `.txt`.
 - Historique local des dernières transcriptions.
+- Logs locaux avec codes d'erreur lisibles.
 - Dossiers locaux créés à côté de l'application :
-  - `Recordings`
-  - `Logs`
-  - `Settings`
   - `Tools`
   - `Models`
 
@@ -37,14 +38,14 @@ https://github.com/Vayaris/MediaScribe-Windows/releases
 Téléchargez uniquement le package portable complet :
 
 ```text
-MediaScribeRecorder-Portable-v1.0.2.zip
+MediaScribeRecorder-Portable-v1.1.0.zip
 ```
 
-Ce package contient tout ce qu'il faut : l'application, les outils de transcription, FFmpeg et les modèles Whisper. Après extraction, le fichier `MediaScribeRecorder.exe` est déjà présent dans le dossier.
+Ce package contient tout ce qu'il faut côté application : l'exécutable, les outils de transcription, FFmpeg et les modèles Whisper. Après extraction, le fichier `MediaScribeRecorder.exe` est déjà présent dans le dossier.
 
 ## Utilisation
 
-1. Télécharger `MediaScribeRecorder-Portable-v1.0.2.zip`.
+1. Télécharger `MediaScribeRecorder-Portable-v1.1.0.zip`.
 2. Extraire le ZIP dans le dossier de votre choix.
 3. Lancer `MediaScribeRecorder.exe`.
 4. Choisir si le son Windows ou application doit être enregistré :
@@ -61,6 +62,8 @@ Ce package contient tout ce qu'il faut : l'application, les outils de transcript
 
 Pendant la transcription, une barre de progression indique l'avancement de `0%` à `100%`.
 
+Si la capture `Application` ne reçoit aucun son, MediaScribe affiche une erreur claire avec le code `REC-APP-002`. Dans ce cas, utilisez `Tout le bureau`, qui reste le mode de capture le plus fiable.
+
 ## Importer et transcrire un fichier
 
 Le bouton `Importer et transcrire` permet de transcrire un fichier déjà existant sans lancer d'enregistrement.
@@ -75,7 +78,7 @@ Le fichier source n'est pas modifié. MediaScribe crée un fichier `.txt` à cô
 
 ## Historique local
 
-MediaScribe garde un historique local des 50 dernières transcriptions dans `Settings/history.json`.
+MediaScribe garde un historique local des 50 dernières transcriptions dans `%LOCALAPPDATA%\MediaScribe Recorder\Settings\history.json`.
 
 Depuis l'interface, il est possible de rouvrir :
 
@@ -106,9 +109,6 @@ Le dossier portable est organisé comme ceci :
 
 ```text
 MediaScribeRecorder.exe
-Recordings/
-Logs/
-Settings/
 Tools/
   MediaScribeProcessLoopback.exe
   whisper-cli.exe
@@ -121,11 +121,22 @@ Models/
   ggml-medium.bin
 ```
 
-Les enregistrements sont placés par défaut dans `Recordings`.
+Les données utilisateur sont organisées comme ceci :
 
-Les journaux d'erreur sont placés dans `Logs`.
+```text
+%LOCALAPPDATA%\MediaScribe Recorder\
+Recordings/
+Logs/
+Settings/
+  settings.json
+  history.json
+```
 
-Les réglages sont placés dans `Settings/settings.json`.
+Les enregistrements sont placés par défaut dans `%LOCALAPPDATA%\MediaScribe Recorder\Recordings`.
+
+Les journaux d'erreur sont placés dans `%LOCALAPPDATA%\MediaScribe Recorder\Logs`.
+
+Les réglages sont placés dans `%LOCALAPPDATA%\MediaScribe Recorder\Settings\settings.json`.
 
 ## Build depuis les sources
 
