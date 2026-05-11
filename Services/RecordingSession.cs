@@ -16,6 +16,8 @@ public sealed class RecordingSession : IDisposable
     private readonly CapturedSource systemSource;
     private readonly CapturedSource micSource;
     private readonly WaveFileWriter writer;
+    private readonly WaveFileWriter? systemWriter;
+    private readonly WaveFileWriter? microphoneWriter;
     private readonly Task writerTask;
     private readonly float systemGain;
     private readonly float microphoneGain;
@@ -25,6 +27,8 @@ public sealed class RecordingSession : IDisposable
         IAudioCaptureSource systemCapture,
         IAudioCaptureSource micCapture,
         string outputPath,
+        string? systemOutputPath,
+        string? microphoneOutputPath,
         LogService log,
         double systemGain,
         double microphoneGain)
@@ -39,10 +43,24 @@ public sealed class RecordingSession : IDisposable
         systemSource = new CapturedSource(systemCapture, "Système");
         micSource = new CapturedSource(micCapture, "Micro");
         writer = new WaveFileWriter(outputPath, new WaveFormat(TargetSampleRate, 16, TargetChannels));
+        if (!string.IsNullOrWhiteSpace(systemOutputPath))
+        {
+            systemWriter = new WaveFileWriter(systemOutputPath, new WaveFormat(TargetSampleRate, 16, TargetChannels));
+            SystemOutputPath = systemOutputPath;
+        }
+
+        if (!string.IsNullOrWhiteSpace(microphoneOutputPath))
+        {
+            microphoneWriter = new WaveFileWriter(microphoneOutputPath, new WaveFormat(TargetSampleRate, 16, TargetChannels));
+            MicrophoneOutputPath = microphoneOutputPath;
+        }
+
         writerTask = Task.Run(() => WriteLoop(cts.Token));
     }
 
     public string OutputPath { get; }
+    public string? SystemOutputPath { get; }
+    public string? MicrophoneOutputPath { get; }
     public event EventHandler<RecordingLevelsEventArgs>? LevelsUpdated;
     public event EventHandler<string>? WarningRaised;
 
@@ -78,6 +96,8 @@ public sealed class RecordingSession : IDisposable
         lock (sync)
         {
             writer.Dispose();
+            systemWriter?.Dispose();
+            microphoneWriter?.Dispose();
         }
 
         log.Info($"Recording stopped: {OutputPath}");
@@ -90,7 +110,11 @@ public sealed class RecordingSession : IDisposable
         var systemBuffer = new float[maxSamples];
         var micBuffer = new float[maxSamples];
         var mix = new float[maxSamples];
+        var systemTrack = systemWriter is null ? null : new float[maxSamples];
+        var microphoneTrack = microphoneWriter is null ? null : new float[maxSamples];
         var outputBytes = new byte[mix.Length * 2];
+        var systemOutputBytes = systemWriter is null ? null : new byte[mix.Length * 2];
+        var microphoneOutputBytes = microphoneWriter is null ? null : new byte[mix.Length * 2];
         var stopwatch = Stopwatch.StartNew();
         long samplesWritten = 0;
 
@@ -112,6 +136,8 @@ public sealed class RecordingSession : IDisposable
             }
 
             Array.Clear(mix);
+            if (systemTrack is not null) Array.Clear(systemTrack);
+            if (microphoneTrack is not null) Array.Clear(microphoneTrack);
 
             var systemRead = systemSource.Read(systemBuffer, samplesToWrite);
             var micRead = micSource.Read(micBuffer, samplesToWrite);
@@ -123,21 +149,50 @@ public sealed class RecordingSession : IDisposable
                 var sample = 0f;
                 if (i < systemRead)
                 {
-                    sample += systemBuffer[i] * systemGain;
+                    var systemSample = systemBuffer[i] * systemGain;
+                    sample += systemSample;
+                    if (systemTrack is not null)
+                    {
+                        systemTrack[i] = Math.Clamp(systemSample, -1f, 1f);
+                    }
                 }
 
                 if (i < micRead)
                 {
-                    sample += micBuffer[i] * microphoneGain;
+                    var microphoneSample = micBuffer[i] * microphoneGain;
+                    sample += microphoneSample;
+                    if (microphoneTrack is not null)
+                    {
+                        microphoneTrack[i] = Math.Clamp(microphoneSample, -1f, 1f);
+                    }
                 }
 
                 mix[i] = Math.Clamp(sample, -1f, 1f);
             }
 
             FloatToPcm16(mix, samplesToWrite, outputBytes);
+            if (systemTrack is not null && systemOutputBytes is not null)
+            {
+                FloatToPcm16(systemTrack, samplesToWrite, systemOutputBytes);
+            }
+
+            if (microphoneTrack is not null && microphoneOutputBytes is not null)
+            {
+                FloatToPcm16(microphoneTrack, samplesToWrite, microphoneOutputBytes);
+            }
+
             lock (sync)
             {
                 writer.Write(outputBytes, 0, samplesToWrite * 2);
+                if (systemWriter is not null && systemOutputBytes is not null)
+                {
+                    systemWriter.Write(systemOutputBytes, 0, samplesToWrite * 2);
+                }
+
+                if (microphoneWriter is not null && microphoneOutputBytes is not null)
+                {
+                    microphoneWriter.Write(microphoneOutputBytes, 0, samplesToWrite * 2);
+                }
             }
             samplesWritten += samplesToWrite;
 

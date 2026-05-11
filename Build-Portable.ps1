@@ -22,6 +22,12 @@ $publishTools = Join-Path $publishDir "Tools"
 $publishModels = Join-Path $publishDir "Models"
 New-Item -ItemType Directory -Force -Path $publishTools | Out-Null
 New-Item -ItemType Directory -Force -Path $publishModels | Out-Null
+foreach ($userDataDirName in @("Recordings", "Logs", "Settings")) {
+    $userDataDir = Join-Path $publishDir $userDataDirName
+    if (Test-Path $userDataDir) {
+        Get-ChildItem -LiteralPath $userDataDir -Force | Remove-Item -Recurse -Force
+    }
+}
 
 $requiredTools = @(
     "MediaScribeProcessLoopback.exe",

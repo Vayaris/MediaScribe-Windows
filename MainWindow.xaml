@@ -256,7 +256,9 @@
 
         <Border Grid.Row="5" Margin="0,14,0,0" Background="#F8FAFD" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="8" Padding="14">
           <Grid>
-            <Grid.RowDefinitions>
+          <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
               <RowDefinition Height="Auto"/>
               <RowDefinition Height="Auto"/>
               <RowDefinition Height="Auto"/>
@@ -268,6 +270,7 @@
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="190"/>
+                <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
@@ -284,7 +287,8 @@
               <Button Grid.Column="2" x:Name="ImportTranscribeButton" Content="Importer et transcrire" Margin="12,0,0,0" Click="OnImportTranscribe"/>
               <Button Grid.Column="3" x:Name="CancelTranscriptionButton" Content="Annuler" Margin="10,0,0,0" Background="{StaticResource DangerBrush}" IsEnabled="False" Click="OnCancelTranscription"/>
               <Button Grid.Column="4" x:Name="CopyTranscriptButton" Content="Copier" Margin="10,0,0,0" IsEnabled="False" Click="OnCopyTranscript"/>
-              <Button Grid.Column="5" x:Name="OpenTranscriptButton" Content="Ouvrir le .txt" Margin="10,0,0,0" HorizontalAlignment="Left" IsEnabled="False" Click="OnOpenTranscript"/>
+              <Button Grid.Column="5" x:Name="RetryTranscriptionButton" Content="Réessayer" Margin="10,0,0,0" IsEnabled="False" Click="OnRetryTranscription"/>
+              <Button Grid.Column="6" x:Name="OpenTranscriptButton" Content="Ouvrir le .txt" Margin="10,0,0,0" HorizontalAlignment="Left" IsEnabled="False" Click="OnOpenTranscript"/>
             </Grid>
             <Grid Grid.Row="1" Margin="0,12,0,6">
               <Grid.ColumnDefinitions>
@@ -297,7 +301,30 @@
             <TextBlock Grid.Row="2" x:Name="TranscriptionStatusText" Text="Transcription prête" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8" TextWrapping="Wrap"/>
             <TextBox Grid.Row="3" x:Name="TranscriptTextBox" Height="110" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" IsReadOnly="True"/>
             <TextBlock Grid.Row="4" x:Name="TranscriptFileText" Text="" Foreground="{StaticResource MutedBrush}" Margin="0,10,0,0" TextWrapping="Wrap"/>
-            <StackPanel Grid.Row="5" Margin="0,14,0,0">
+            <TextBlock Grid.Row="5" x:Name="SuspiciousTranscriptionText" Text="" Foreground="#B45309" FontWeight="SemiBold" Margin="0,8,0,0" TextWrapping="Wrap" Visibility="Collapsed"/>
+            <Border Grid.Row="6" Margin="0,14,0,0" Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="7" Padding="10">
+              <Grid>
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto"/>
+                  <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <DockPanel Grid.Row="0" Margin="0,0,0,8">
+                  <TextBlock Text="Prévisualisation audio" FontWeight="SemiBold"/>
+                  <TextBlock x:Name="PreviewStatusText" Text="Aucun audio chargé" DockPanel.Dock="Right" Foreground="{StaticResource MutedBrush}"/>
+                </DockPanel>
+                <Grid Grid.Row="1">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <Button Grid.Column="0" x:Name="PreviewPlayPauseButton" Content="Lecture" Padding="12,6" IsEnabled="False" Click="OnPreviewPlayPause"/>
+                  <Slider Grid.Column="1" x:Name="PreviewTimelineSlider" Minimum="0" Maximum="1" Value="0" Margin="12,0" VerticalAlignment="Center" IsEnabled="False" PreviewMouseLeftButtonUp="OnPreviewTimelineSeek"/>
+                  <TextBlock Grid.Column="2" x:Name="PreviewTimeText" Text="00:00 / 00:00" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
+                </Grid>
+              </Grid>
+            </Border>
+            <StackPanel Grid.Row="7" Margin="0,14,0,0">
               <TextBlock Text="Historique récent" FontWeight="SemiBold" Margin="0,0,0,8"/>
               <TextBlock x:Name="HistoryEmptyText" Text="Aucun historique pour le moment" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,6"/>
               <ListBox x:Name="HistoryListBox" MaxHeight="190" BorderThickness="0" Background="Transparent">
@@ -311,6 +338,7 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0">
                           <TextBlock Text="{Binding FileName}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                          <TextBlock Text="{Binding DisplayWarning, Mode=OneWay}" Foreground="#B45309" FontWeight="SemiBold" FontSize="12"/>
                           <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="12" TextWrapping="Wrap">
                             <Run Text="{Binding DisplayDate, Mode=OneWay}"/>
                             <Run Text=" - "/>
@@ -322,7 +350,8 @@
                           <TextBlock Text="{Binding TranscriptPath}" Foreground="{StaticResource MutedBrush}" FontSize="12" TextTrimming="CharacterEllipsis"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
-                          <Button Content="Audio" Padding="10,6" Tag="{Binding}" Click="OnOpenHistoryMedia"/>
+                          <Button Content="Lire" Padding="10,6" Tag="{Binding}" Click="OnPreviewHistoryMedia"/>
+                          <Button Content="Audio" Padding="10,6" Margin="8,0,0,0" Tag="{Binding}" Click="OnOpenHistoryMedia"/>
                           <Button Content=".txt" Padding="10,6" Margin="8,0,0,0" Tag="{Binding}" Click="OnOpenHistoryTranscript"/>
                           <Button Content="Dossier" Padding="10,6" Margin="8,0,0,0" Tag="{Binding}" Click="OnOpenHistoryFolder"/>
                         </StackPanel>

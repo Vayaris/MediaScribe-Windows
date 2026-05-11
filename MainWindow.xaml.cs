@@ -4,6 +4,8 @@ using System.Diagnostics;
 using MediaScribeRecorder.Models;
 using MediaScribeRecorder.Services;
 using Microsoft.Win32;
+using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace MediaScribeRecorder;
 
@@ -20,9 +22,14 @@ public partial class MainWindow : Window
     private RecordingSession? session;
     private CancellationTokenSource? transcriptionCts;
     private readonly ObservableCollection<TranscriptionHistoryItem> historyItems = [];
+    private readonly MediaPlayer previewPlayer = new();
+    private readonly DispatcherTimer previewTimer = new();
     private string? currentTranscriptPath;
+    private string? currentMediaPath;
+    private string? previewMediaPath;
     private double displayedSystemLevel;
     private double displayedMicrophoneLevel;
+    private bool isPreviewPlaying;
     private bool isInitialized;
 
     public MainWindow()
@@ -33,6 +40,10 @@ public partial class MainWindow : Window
         historyStore = new HistoryStore(paths);
         log = new LogService(paths);
         transcription = new TranscriptionService(paths, log);
+        previewTimer.Interval = TimeSpan.FromMilliseconds(250);
+        previewTimer.Tick += OnPreviewTimerTick;
+        previewPlayer.MediaOpened += OnPreviewMediaOpened;
+        previewPlayer.MediaEnded += OnPreviewMediaEnded;
         settings = settingsStore.Load();
         OutputFolderTextBox.Text = settings.OutputFolder;
         FooterText.Text = $"Application: {paths.Root} | Données: {paths.UserRoot}";
@@ -149,7 +160,10 @@ public partial class MainWindow : Window
             SaveCurrentSettings();
             PathValidator.EnsureWritableDirectory(settings.OutputFolder);
 
-            var outputPath = Path.Combine(settings.OutputFolder, $"MediaScribe-{DateTime.Now:yyyyMMdd-HHmmss}.wav");
+            var recordingFolder = CreateRecordingFolder(settings.OutputFolder);
+            var outputPath = Path.Combine(recordingFolder, "mix.wav");
+            var systemOutputPath = settings.SaveSeparateTracks ? Path.Combine(recordingFolder, "windows.wav") : null;
+            var microphoneOutputPath = settings.SaveSeparateTracks ? Path.Combine(recordingFolder, "micro.wav") : null;
             var micDevice = audioDevices.GetCaptureDevice(settings.MicrophoneDeviceId);
             IAudioCaptureSource micCapture = new WasapiCaptureSource(micDevice);
             IAudioCaptureSource systemCapture;
@@ -174,7 +188,7 @@ public partial class MainWindow : Window
                 systemCapture = new WasapiLoopbackCaptureSource(audioDevices.GetDefaultRenderDevice());
             }
 
-            session = new RecordingSession(systemCapture, micCapture, outputPath, log, settings.SystemGain, settings.MicrophoneGain);
+            session = new RecordingSession(systemCapture, micCapture, outputPath, systemOutputPath, microphoneOutputPath, log, settings.SystemGain, settings.MicrophoneGain);
             session.LevelsUpdated += OnLevelsUpdated;
             session.WarningRaised += (_, warning) => Dispatcher.Invoke(() => StatusText.Text = warning);
             session.Start();
@@ -188,28 +202,38 @@ public partial class MainWindow : Window
             {
                 var warning = "REC-APP-002 - Capture application démarrée, mais aucun son n'a été reçu. Lancez du son dans cette application ou utilisez Tout le bureau.";
                 log.Info(warning);
-                await StopCurrentSession(transcribeAfterStop: false);
+                await StopCurrentSession(returnOutput: false);
                 MessageBox.Show(this, warning, "Capture application", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
         catch (Exception ex)
         {
             log.Error(ex, "Unable to start recording.");
-            await StopCurrentSession(transcribeAfterStop: false);
+            await StopCurrentSession(returnOutput: false);
             MessageBox.Show(this, ex.Message, "MediaScribe Recorder", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
     private async void OnStop(object sender, RoutedEventArgs e)
     {
-        var outputPath = await StopCurrentSession(transcribeAfterStop: true);
+        var outputPath = await StopCurrentSession(returnOutput: true);
         if (!string.IsNullOrWhiteSpace(outputPath))
         {
-            await StartTranscriptionAsync(outputPath);
+            SetPreviewMedia(outputPath);
+            if (settings.AutoTranscribeAfterRecording)
+            {
+                await StartTranscriptionAsync(outputPath);
+            }
+            else
+            {
+                currentMediaPath = outputPath;
+                RetryTranscriptionButton.IsEnabled = true;
+                SetTranscriptionProgress("Audio prêt, transcription automatique désactivée", 0);
+            }
         }
     }
 
-    private async Task<string?> StopCurrentSession(bool transcribeAfterStop)
+    private async Task<string?> StopCurrentSession(bool returnOutput)
     {
         var active = session;
         session = null;
@@ -230,7 +254,7 @@ public partial class MainWindow : Window
         MicLevelText.Text = "0%";
         displayedSystemLevel = 0;
         displayedMicrophoneLevel = 0;
-        return transcribeAfterStop ? outputPath : null;
+        return returnOutput ? outputPath : null;
     }
 
     private void OnLevelsUpdated(object? sender, RecordingLevelsEventArgs e)
@@ -287,6 +311,8 @@ public partial class MainWindow : Window
             settings.SystemGain = dialog.Settings.SystemGain;
             settings.MicrophoneGain = dialog.Settings.MicrophoneGain;
             settings.WhisperModel = dialog.Settings.WhisperModel;
+            settings.AutoTranscribeAfterRecording = dialog.Settings.AutoTranscribeAfterRecording;
+            settings.SaveSeparateTracks = dialog.Settings.SaveSeparateTracks;
             settingsStore.Save(settings);
             UpdateTranscriptionAvailability();
         }
@@ -329,10 +355,15 @@ public partial class MainWindow : Window
         SetTranscriptionProgress("Préparation transcription", 0);
         TranscriptTextBox.Text = "";
         TranscriptFileText.Text = "";
+        SuspiciousTranscriptionText.Visibility = Visibility.Collapsed;
+        SuspiciousTranscriptionText.Text = "";
         currentTranscriptPath = null;
+        currentMediaPath = mediaPath;
         CopyTranscriptButton.IsEnabled = false;
         OpenTranscriptButton.IsEnabled = false;
+        RetryTranscriptionButton.IsEnabled = false;
         TranscriptionStatusText.Text = $"Transcription de {Path.GetFileName(mediaPath)}";
+        SetPreviewMedia(mediaPath);
 
         var progress = new Progress<TranscriptionProgress>(state =>
         {
@@ -358,7 +389,13 @@ public partial class MainWindow : Window
             TranscriptTextBox.Text = result.Text;
             currentTranscriptPath = result.TranscriptPath;
             TranscriptFileText.Text = result.TranscriptPath;
-            SetTranscriptionProgress("Transcription terminée", 100);
+            SetTranscriptionProgress(result.IsSuspicious ? "Transcription terminée avec avertissement" : "Transcription terminée", 100);
+            if (result.IsSuspicious)
+            {
+                SuspiciousTranscriptionText.Text = "Transcription suspecte: " + result.SuspicionReason;
+                SuspiciousTranscriptionText.Visibility = Visibility.Visible;
+            }
+
             CopyTranscriptButton.IsEnabled = !string.IsNullOrWhiteSpace(result.Text);
             OpenTranscriptButton.IsEnabled = File.Exists(result.TranscriptPath);
             AddHistoryItem(result, language, settings.WhisperModel);
@@ -378,6 +415,15 @@ public partial class MainWindow : Window
             transcriptionCts?.Dispose();
             transcriptionCts = null;
             SetTranscriptionBusy(false);
+            RetryTranscriptionButton.IsEnabled = !string.IsNullOrWhiteSpace(currentMediaPath) && File.Exists(currentMediaPath);
+        }
+    }
+
+    private async void OnRetryTranscription(object sender, RoutedEventArgs e)
+    {
+        if (!string.IsNullOrWhiteSpace(currentMediaPath) && File.Exists(currentMediaPath))
+        {
+            await StartTranscriptionAsync(currentMediaPath);
         }
     }
 
@@ -414,6 +460,7 @@ public partial class MainWindow : Window
         ImportTranscribeButton.IsEnabled = !busy;
         CancelTranscriptionButton.IsEnabled = busy;
         LanguageComboBox.IsEnabled = !busy;
+        RetryTranscriptionButton.IsEnabled = !busy && !string.IsNullOrWhiteSpace(currentMediaPath) && File.Exists(currentMediaPath);
     }
 
     private void UpdateTranscriptionAvailability()
@@ -447,13 +494,25 @@ public partial class MainWindow : Window
 
     private void AddHistoryItem(TranscriptionResult result, string language, string model)
     {
+        var mediaFolder = Path.GetDirectoryName(result.MediaPath) ?? "";
+        var mixPath = Path.GetFileName(result.MediaPath).Equals("mix.wav", StringComparison.OrdinalIgnoreCase)
+            ? result.MediaPath
+            : "";
+        var microphonePath = string.IsNullOrWhiteSpace(mediaFolder) ? "" : Path.Combine(mediaFolder, "micro.wav");
+        var systemPath = string.IsNullOrWhiteSpace(mediaFolder) ? "" : Path.Combine(mediaFolder, "windows.wav");
         var item = new TranscriptionHistoryItem
         {
             FileName = Path.GetFileName(result.MediaPath),
             MediaPath = result.MediaPath,
+            MixPath = mixPath,
+            MicrophonePath = File.Exists(microphonePath) ? microphonePath : "",
+            SystemPath = File.Exists(systemPath) ? systemPath : "",
             TranscriptPath = result.TranscriptPath,
+            RecordingFolder = mediaFolder,
             Language = language,
             Model = model,
+            IsSuspicious = result.IsSuspicious,
+            SuspicionReason = result.SuspicionReason,
             CreatedAt = DateTime.Now,
         };
 
@@ -492,12 +551,146 @@ public partial class MainWindow : Window
     {
         if ((sender as FrameworkElement)?.Tag is TranscriptionHistoryItem item)
         {
-            var folder = Path.GetDirectoryName(item.TranscriptPath);
+            var folder = !string.IsNullOrWhiteSpace(item.RecordingFolder)
+                ? item.RecordingFolder
+                : Path.GetDirectoryName(item.TranscriptPath);
             if (!string.IsNullOrWhiteSpace(folder))
             {
                 OpenPath(folder);
             }
         }
+    }
+
+    private void OnPreviewHistoryMedia(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is TranscriptionHistoryItem item)
+        {
+            SetPreviewMedia(item.PreviewPath);
+            PlayPreview();
+        }
+    }
+
+    private void OnPreviewPlayPause(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(previewMediaPath) || !File.Exists(previewMediaPath))
+        {
+            return;
+        }
+
+        if (isPreviewPlaying)
+        {
+            previewPlayer.Pause();
+            previewTimer.Stop();
+            isPreviewPlaying = false;
+            PreviewPlayPauseButton.Content = "Lecture";
+            return;
+        }
+
+        PlayPreview();
+    }
+
+    private void PlayPreview()
+    {
+        if (string.IsNullOrWhiteSpace(previewMediaPath) || !File.Exists(previewMediaPath))
+        {
+            return;
+        }
+
+        previewPlayer.Play();
+        previewTimer.Start();
+        isPreviewPlaying = true;
+        PreviewPlayPauseButton.Content = "Pause";
+    }
+
+    private void SetPreviewMedia(string mediaPath)
+    {
+        if (string.IsNullOrWhiteSpace(mediaPath) || !File.Exists(mediaPath))
+        {
+            return;
+        }
+
+        if (previewMediaPath?.Equals(mediaPath, StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return;
+        }
+
+        previewPlayer.Stop();
+        previewTimer.Stop();
+        previewMediaPath = mediaPath;
+        isPreviewPlaying = false;
+        PreviewPlayPauseButton.Content = "Lecture";
+        PreviewPlayPauseButton.IsEnabled = true;
+        PreviewTimelineSlider.IsEnabled = true;
+        PreviewTimelineSlider.Value = 0;
+        PreviewStatusText.Text = Path.GetFileName(mediaPath);
+        PreviewTimeText.Text = "00:00 / 00:00";
+        previewPlayer.Open(new Uri(mediaPath, UriKind.Absolute));
+    }
+
+    private void OnPreviewMediaOpened(object? sender, EventArgs e)
+    {
+        if (previewPlayer.NaturalDuration.HasTimeSpan)
+        {
+            PreviewTimelineSlider.Maximum = Math.Max(1, previewPlayer.NaturalDuration.TimeSpan.TotalSeconds);
+            PreviewTimeText.Text = $"00:00 / {FormatTime(previewPlayer.NaturalDuration.TimeSpan)}";
+        }
+    }
+
+    private void OnPreviewMediaEnded(object? sender, EventArgs e)
+    {
+        previewTimer.Stop();
+        isPreviewPlaying = false;
+        PreviewPlayPauseButton.Content = "Lecture";
+        previewPlayer.Position = TimeSpan.Zero;
+        PreviewTimelineSlider.Value = 0;
+        UpdatePreviewTime();
+    }
+
+    private void OnPreviewTimerTick(object? sender, EventArgs e)
+    {
+        UpdatePreviewTime();
+    }
+
+    private void OnPreviewTimelineSeek(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (previewMediaPath is null || !PreviewTimelineSlider.IsEnabled)
+        {
+            return;
+        }
+
+        previewPlayer.Position = TimeSpan.FromSeconds(PreviewTimelineSlider.Value);
+        UpdatePreviewTime();
+    }
+
+    private void UpdatePreviewTime()
+    {
+        var position = previewPlayer.Position;
+        var duration = previewPlayer.NaturalDuration.HasTimeSpan ? previewPlayer.NaturalDuration.TimeSpan : TimeSpan.Zero;
+        PreviewTimelineSlider.Value = Math.Clamp(position.TotalSeconds, PreviewTimelineSlider.Minimum, PreviewTimelineSlider.Maximum);
+        PreviewTimeText.Text = $"{FormatTime(position)} / {FormatTime(duration)}";
+    }
+
+    private static string FormatTime(TimeSpan value)
+    {
+        return value.TotalHours >= 1
+            ? value.ToString(@"hh\:mm\:ss")
+            : value.ToString(@"mm\:ss");
+    }
+
+    private static string CreateRecordingFolder(string outputRoot)
+    {
+        var safeRoot = string.IsNullOrWhiteSpace(outputRoot) ? Environment.CurrentDirectory : outputRoot;
+        var baseName = "MediaScribe-" + DateTime.Now.ToString("yyyyMMdd-HHmmss");
+        var folder = Path.Combine(safeRoot, baseName);
+        var index = 2;
+        while (Directory.Exists(folder))
+        {
+            folder = Path.Combine(safeRoot, $"{baseName}-{index}");
+            index++;
+        }
+
+        Directory.CreateDirectory(folder);
+        return folder;
     }
 
     private static void OpenPath(string path)
@@ -517,7 +710,9 @@ public partial class MainWindow : Window
     protected override async void OnClosed(EventArgs e)
     {
         transcriptionCts?.Cancel();
-        await StopCurrentSession(transcribeAfterStop: false);
+        previewTimer.Stop();
+        previewPlayer.Close();
+        await StopCurrentSession(returnOutput: false);
         base.OnClosed(e);
     }
 }

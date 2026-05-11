@@ -7,6 +7,16 @@ namespace MediaScribeRecorder.Services;
 
 public sealed class TranscriptionService
 {
+    private static readonly string[] SuspiciousPhrases =
+    [
+        "Sous-titres réalisés par la communauté d'Amara.org",
+        "Sous-titres réalisés par la communauté d’Amara.org",
+        "*Musique d'outro*",
+        "Musique d'outro",
+        "Alright !",
+        "Alright!",
+    ];
+
     private readonly PortableAppPaths paths;
     private readonly LogService log;
 
@@ -128,10 +138,12 @@ public sealed class TranscriptionService
                 throw new InvalidOperationException("whisper.cpp n'a pas produit de fichier transcript.");
             }
 
-            var text = CleanTranscript(await File.ReadAllTextAsync(generated, Encoding.UTF8, cancellationToken).ConfigureAwait(false));
+            var rawText = await File.ReadAllTextAsync(generated, Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+            var text = CleanTranscript(rawText);
+            var suspicion = DetectSuspicion(rawText, text, duration);
             await File.WriteAllTextAsync(transcriptPath, text + Environment.NewLine, Encoding.UTF8, cancellationToken).ConfigureAwait(false);
             progress?.Report(new TranscriptionProgress("Terminé", 100, "done"));
-            return new TranscriptionResult(mediaPath, transcriptPath, text);
+            return new TranscriptionResult(mediaPath, transcriptPath, text, suspicion.IsSuspicious, suspicion.Reason);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -330,26 +342,42 @@ public sealed class TranscriptionService
 
     private static string CleanTranscript(string text)
     {
-        var blocked = new[]
-        {
-            "Sous-titres réalisés par la communauté d'Amara.org",
-            "Sous-titres réalisés par la communauté d’Amara.org",
-            "*Musique d'outro*",
-            "Musique d'outro",
-            "Alright !",
-            "Alright!",
-        };
-
         var lines = text
             .Replace("\r", "")
             .Split('\n')
             .Select(line => line.Trim())
             .Where(line => !string.IsNullOrWhiteSpace(line))
             .Where(line => line != "...")
-            .Where(line => !blocked.Any(blockedText => line.Equals(blockedText, StringComparison.OrdinalIgnoreCase)))
+            .Where(line => !SuspiciousPhrases.Any(blockedText => line.Equals(blockedText, StringComparison.OrdinalIgnoreCase)))
             .ToList();
 
         return string.Join(Environment.NewLine, lines).Trim();
+    }
+
+    private static TranscriptionSuspicion DetectSuspicion(string rawText, string cleanedText, double? durationSeconds)
+    {
+        if (SuspiciousPhrases.Any(phrase => rawText.Contains(phrase, StringComparison.OrdinalIgnoreCase)))
+        {
+            return new TranscriptionSuspicion(true, "Phrase connue de hallucination Whisper détectée.");
+        }
+
+        if (string.IsNullOrWhiteSpace(cleanedText))
+        {
+            return new TranscriptionSuspicion(true, "Transcript vide après nettoyage.");
+        }
+
+        var textLength = cleanedText.Count(char.IsLetterOrDigit);
+        if (durationSeconds is >= 12 && textLength < 20)
+        {
+            return new TranscriptionSuspicion(true, "Transcript très court par rapport à la durée audio.");
+        }
+
+        if (durationSeconds is >= 30 && textLength < 60)
+        {
+            return new TranscriptionSuspicion(true, "Transcript probablement incomplet par rapport à la durée audio.");
+        }
+
+        return new TranscriptionSuspicion(false, "");
     }
 
     private static string NormalizeModel(string model)
@@ -363,5 +391,6 @@ public sealed class TranscriptionService
     }
 }
 
-public sealed record TranscriptionResult(string MediaPath, string TranscriptPath, string Text);
+public sealed record TranscriptionResult(string MediaPath, string TranscriptPath, string Text, bool IsSuspicious, string SuspicionReason);
 public sealed record TranscriptionProgress(string Message, int? Percent, string Stage);
+internal sealed record TranscriptionSuspicion(bool IsSuspicious, string Reason);

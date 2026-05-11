@@ -15,14 +15,20 @@ Le logiciel est pensé pour un usage simple : lancer l'exécutable, choisir les 
 - Diagnostic clair si la capture d'application ne reçoit aucun son.
 - Choix du micro à utiliser.
 - Choix du dossier de sortie.
-- Création automatique d'un fichier audio `.wav`.
+- Création automatique d'un dossier par enregistrement.
+- Création d'un fichier audio principal `mix.wav`.
+- Option pour enregistrer aussi `micro.wav` et `windows.wav`.
 - Transcription locale avec `whisper.cpp`, sans API externe.
 - Progression de transcription de 0% à 100%.
+- Transcription automatique après enregistrement, activable ou désactivable.
+- Bouton `Réessayer` pour relancer une transcription.
+- Détection des transcriptions suspectes.
 - Choix du modèle de transcription `small` ou `medium`.
 - Choix de la langue de transcription, avec le français par défaut.
 - Import et transcription de fichiers audio ou vidéo existants.
 - Création d'un fichier `.txt` à côté du fichier audio ou vidéo transcrit.
 - Boutons pour copier la transcription et ouvrir le fichier `.txt`.
+- Prévisualisation audio avec lecture/pause et mini timeline.
 - Historique local des dernières transcriptions.
 - Logs locaux avec codes d'erreur lisibles.
 - Dossiers locaux créés à côté de l'application :
@@ -38,14 +44,14 @@ https://github.com/Vayaris/MediaScribe-Windows/releases
 Téléchargez uniquement le package portable complet :
 
 ```text
-MediaScribeRecorder-Portable-v1.1.3.zip
+MediaScribeRecorder-Portable-v1.2.0.zip
 ```
 
 Ce package contient tout ce qu'il faut côté application : l'exécutable, les outils de transcription, FFmpeg et les modèles Whisper. Après extraction, le fichier `MediaScribeRecorder.exe` est déjà présent dans le dossier.
 
 ## Utilisation
 
-1. Télécharger `MediaScribeRecorder-Portable-v1.1.3.zip`.
+1. Télécharger `MediaScribeRecorder-Portable-v1.2.0.zip`.
 2. Extraire le ZIP dans le dossier de votre choix.
 3. Lancer `MediaScribeRecorder.exe`.
 4. Choisir si le son Windows ou application doit être enregistré :
@@ -56,11 +62,14 @@ Ce package contient tout ce qu'il faut côté application : l'exécutable, les o
 6. Choisir le dossier de sortie si besoin.
 7. Cliquer sur `Enregistrer`.
 8. Cliquer sur `Stop`.
-9. Le fichier `.wav` est créé automatiquement.
-10. La transcription démarre automatiquement si les outils et le modèle sont présents.
-11. Le fichier `.txt` est créé à côté du fichier audio.
+9. Un dossier daté est créé automatiquement dans le dossier de sortie.
+10. Le fichier `mix.wav` est créé dans ce dossier.
+11. La transcription démarre automatiquement si l'option est activée et si les outils et le modèle sont présents.
+12. Le fichier `mix.txt` est créé à côté de `mix.wav`.
 
 Pendant la transcription, une barre de progression indique l'avancement de `0%` à `100%`.
+
+Si le résultat semble vide, trop court ou correspond à une phrase connue de hallucination Whisper, MediaScribe affiche un avertissement `Transcription suspecte`. Le fichier `.txt` reste créé, et le bouton `Réessayer` permet de relancer la transcription avec les réglages actuels.
 
 Si la capture `Application` ne reçoit aucun son, MediaScribe affiche une erreur claire avec le code `REC-APP-002`. Dans ce cas, utilisez `Tout le bureau`, qui reste le mode de capture le plus fiable.
 
@@ -82,6 +91,7 @@ MediaScribe garde un historique local des 50 dernières transcriptions dans `%LO
 
 Depuis l'interface, il est possible de rouvrir :
 
+- lire rapidement le fichier audio ;
 - le fichier audio ou vidéo ;
 - le fichier `.txt` ;
 - le dossier contenant le résultat.
@@ -93,6 +103,8 @@ Le bouton `Paramètres` permet de régler :
 - le gain du son Windows/application ;
 - le gain du micro ;
 - le modèle Whisper utilisé pour la transcription.
+- l'auto-transcription après enregistrement ;
+- l'enregistrement optionnel des pistes séparées `micro.wav` et `windows.wav`.
 
 Modèles disponibles dans cette version :
 
@@ -126,6 +138,11 @@ Les données utilisateur sont organisées comme ceci :
 ```text
 %LOCALAPPDATA%\MediaScribe Recorder\
 Recordings/
+  MediaScribe-YYYYMMDD-HHMMSS/
+    mix.wav
+    mix.txt
+    micro.wav
+    windows.wav
 Logs/
 Settings/
   settings.json
