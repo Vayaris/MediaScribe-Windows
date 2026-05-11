@@ -27,5 +27,6 @@ public sealed class PortableAppPaths
     public string Models { get; }
 
     public string SettingsFile => Path.Combine(Settings, "settings.json");
+    public string HistoryFile => Path.Combine(Settings, "history.json");
     public string LogFile => Path.Combine(Logs, $"mediascribe-recorder-{DateTime.Now:yyyyMMdd}.log");
 }

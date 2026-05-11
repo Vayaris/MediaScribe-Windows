@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Globalization;
+using System.Text.RegularExpressions;
 using System.Text;
 
 namespace MediaScribeRecorder.Services;
@@ -34,7 +36,7 @@ public sealed class TranscriptionService
         string mediaPath,
         string language,
         string model,
-        IProgress<string>? progress,
+        IProgress<TranscriptionProgress>? progress,
         CancellationToken cancellationToken)
     {
         if (!File.Exists(mediaPath))
@@ -58,22 +60,26 @@ public sealed class TranscriptionService
 
         try
         {
-            progress?.Report("Préparation audio");
+            var duration = await GetMediaDurationAsync(mediaPath, cancellationToken).ConfigureAwait(false);
+            progress?.Report(new TranscriptionProgress("Préparation audio", 0, "prepare"));
             await RunProcessAsync(
                 FfmpegPath,
                 [
                     "-y",
                     "-i", mediaPath,
+                    "-progress", "pipe:1",
+                    "-nostats",
                     "-vn",
                     "-ac", "1",
                     "-ar", "16000",
                     preparedWav,
                 ],
                 progress,
+                line => ParseFfmpegProgress(line, duration),
                 cancellationToken).ConfigureAwait(false);
 
             var selectedModel = ModelPath(model);
-            progress?.Report($"Transcription Whisper {NormalizeModel(model)}");
+            progress?.Report(new TranscriptionProgress($"Transcription Whisper {NormalizeModel(model)}", 15, "whisper"));
             var whisperPrefix = Path.Combine(tempDir, "transcript");
             var normalizedLanguage = string.IsNullOrWhiteSpace(language) ? "fr" : language.Trim();
             var whisperArgs = new List<string>
@@ -92,6 +98,7 @@ public sealed class TranscriptionService
                 WhisperPath,
                 whisperArgs,
                 progress,
+                ParseWhisperProgress,
                 cancellationToken).ConfigureAwait(false);
 
             var generated = whisperPrefix + ".txt";
@@ -102,7 +109,7 @@ public sealed class TranscriptionService
 
             var text = (await File.ReadAllTextAsync(generated, Encoding.UTF8, cancellationToken).ConfigureAwait(false)).Trim();
             await File.WriteAllTextAsync(transcriptPath, text + Environment.NewLine, Encoding.UTF8, cancellationToken).ConfigureAwait(false);
-            progress?.Report("Terminé");
+            progress?.Report(new TranscriptionProgress("Terminé", 100, "done"));
             return new TranscriptionResult(mediaPath, transcriptPath, text);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -125,7 +132,8 @@ public sealed class TranscriptionService
     private static async Task RunProcessAsync(
         string fileName,
         IReadOnlyList<string> arguments,
-        IProgress<string>? progress,
+        IProgress<TranscriptionProgress>? progress,
+        Func<string, TranscriptionProgress?> parseProgress,
         CancellationToken cancellationToken)
     {
         var output = new StringBuilder();
@@ -148,13 +156,29 @@ public sealed class TranscriptionService
         {
             if (string.IsNullOrWhiteSpace(e.Data)) return;
             output.AppendLine(e.Data);
-            progress?.Report(CompactStatus(e.Data));
+            var parsed = parseProgress(e.Data);
+            if (parsed is not null)
+            {
+                progress?.Report(parsed);
+            }
+            else if (!IsMachineProgressLine(e.Data))
+            {
+                progress?.Report(new TranscriptionProgress(CompactStatus(e.Data), null, "status"));
+            }
         };
         process.ErrorDataReceived += (_, e) =>
         {
             if (string.IsNullOrWhiteSpace(e.Data)) return;
             output.AppendLine(e.Data);
-            progress?.Report(CompactStatus(e.Data));
+            var parsed = parseProgress(e.Data);
+            if (parsed is not null)
+            {
+                progress?.Report(parsed);
+            }
+            else if (!IsMachineProgressLine(e.Data))
+            {
+                progress?.Report(new TranscriptionProgress(CompactStatus(e.Data), null, "status"));
+            }
         };
 
         if (!process.Start())
@@ -186,11 +210,95 @@ public sealed class TranscriptionService
         }
     }
 
+    private async Task<double?> GetMediaDurationAsync(string mediaPath, CancellationToken cancellationToken)
+    {
+        if (!File.Exists(FfprobePath))
+        {
+            return null;
+        }
+
+        var output = new StringBuilder();
+        using var process = new Process();
+        process.StartInfo = new ProcessStartInfo
+        {
+            FileName = FfprobePath,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = false,
+        };
+
+        foreach (var argument in new[] { "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", mediaPath })
+        {
+            process.StartInfo.ArgumentList.Add(argument);
+        }
+
+        process.OutputDataReceived += (_, e) =>
+        {
+            if (!string.IsNullOrWhiteSpace(e.Data))
+            {
+                output.AppendLine(e.Data);
+            }
+        };
+
+        if (!process.Start())
+        {
+            return null;
+        }
+
+        process.BeginOutputReadLine();
+        await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        return double.TryParse(output.ToString().Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds)
+            ? seconds
+            : null;
+    }
+
+    private static TranscriptionProgress? ParseFfmpegProgress(string line, double? durationSeconds)
+    {
+        line = line.Trim();
+        if (line.StartsWith("out_time_ms=", StringComparison.OrdinalIgnoreCase)
+            && durationSeconds is > 0
+            && long.TryParse(line["out_time_ms=".Length..], CultureInfo.InvariantCulture, out var microseconds))
+        {
+            var processedSeconds = microseconds / 1_000_000d;
+            var percent = ClampPercent((int)Math.Round(processedSeconds / durationSeconds.Value * 15d));
+            return new TranscriptionProgress($"Préparation audio {percent}%", percent, "prepare");
+        }
+
+        if (line.Equals("progress=end", StringComparison.OrdinalIgnoreCase))
+        {
+            return new TranscriptionProgress("Préparation audio terminée", 15, "prepare");
+        }
+
+        return null;
+    }
+
+    private static TranscriptionProgress? ParseWhisperProgress(string line)
+    {
+        var match = Regex.Match(line, @"(?<!\d)(\d{1,3})\s*%");
+        if (!match.Success || !int.TryParse(match.Groups[1].Value, out var rawPercent))
+        {
+            return null;
+        }
+
+        var bounded = Math.Clamp(rawPercent, 0, 100);
+        var mapped = ClampPercent(15 + (int)Math.Round(bounded * 0.84d));
+        return new TranscriptionProgress($"Transcription {mapped}%", mapped, "whisper");
+    }
+
+    private static int ClampPercent(int percent) => Math.Clamp(percent, 0, 100);
+
     private static string CompactStatus(string line)
     {
         line = line.Trim();
         if (line.Length <= 140) return line;
         return line[..140] + "...";
+    }
+
+    private static bool IsMachineProgressLine(string line)
+    {
+        line = line.Trim();
+        return line.Contains('=') && !line.Contains(' ');
     }
 
     private static string Tail(string text, int maxLength)
@@ -211,3 +319,4 @@ public sealed class TranscriptionService
 }
 
 public sealed record TranscriptionResult(string MediaPath, string TranscriptPath, string Text);
+public sealed record TranscriptionProgress(string Message, int? Percent, string Stage);

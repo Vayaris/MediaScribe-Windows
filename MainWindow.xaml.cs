@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using MediaScribeRecorder.Models;
 using MediaScribeRecorder.Services;
@@ -10,6 +11,7 @@ public partial class MainWindow : Window
 {
     private readonly PortableAppPaths paths = new();
     private readonly SettingsStore settingsStore;
+    private readonly HistoryStore historyStore;
     private readonly LogService log;
     private readonly AudioDeviceService audioDevices = new();
     private readonly WindowProcessService processWindows = new();
@@ -17,6 +19,7 @@ public partial class MainWindow : Window
     private RecordingSettings settings;
     private RecordingSession? session;
     private CancellationTokenSource? transcriptionCts;
+    private readonly ObservableCollection<TranscriptionHistoryItem> historyItems = [];
     private string? currentTranscriptPath;
     private double displayedSystemLevel;
     private double displayedMicrophoneLevel;
@@ -27,6 +30,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         FitWindowToWorkArea();
         settingsStore = new SettingsStore(paths);
+        historyStore = new HistoryStore(paths);
         log = new LogService(paths);
         transcription = new TranscriptionService(paths, log);
         settings = settingsStore.Load();
@@ -41,6 +45,7 @@ public partial class MainWindow : Window
         DesktopModeRadio.IsChecked = ApplicationModeRadio.IsChecked != true;
         UpdateModeState();
         UpdateTranscriptionAvailability();
+        LoadHistory();
         isInitialized = true;
     }
 
@@ -311,16 +316,23 @@ public partial class MainWindow : Window
 
         transcriptionCts = new CancellationTokenSource();
         SetTranscriptionBusy(true);
+        SetTranscriptionProgress("Préparation transcription", 0);
         TranscriptTextBox.Text = "";
         TranscriptFileText.Text = "";
         currentTranscriptPath = null;
+        CopyTranscriptButton.IsEnabled = false;
+        OpenTranscriptButton.IsEnabled = false;
         TranscriptionStatusText.Text = $"Transcription de {Path.GetFileName(mediaPath)}";
 
-        var progress = new Progress<string>(message =>
+        var progress = new Progress<TranscriptionProgress>(state =>
         {
-            if (!string.IsNullOrWhiteSpace(message))
+            if (state.Percent.HasValue)
             {
-                TranscriptionStatusText.Text = message;
+                SetTranscriptionProgress(state.Message, state.Percent.Value);
+            }
+            else if (!string.IsNullOrWhiteSpace(state.Message))
+            {
+                TranscriptionStatusText.Text = state.Message;
             }
         });
 
@@ -336,18 +348,19 @@ public partial class MainWindow : Window
             TranscriptTextBox.Text = result.Text;
             currentTranscriptPath = result.TranscriptPath;
             TranscriptFileText.Text = result.TranscriptPath;
-            TranscriptionStatusText.Text = "Transcription terminée";
+            SetTranscriptionProgress("Transcription terminée", 100);
             CopyTranscriptButton.IsEnabled = !string.IsNullOrWhiteSpace(result.Text);
             OpenTranscriptButton.IsEnabled = File.Exists(result.TranscriptPath);
+            AddHistoryItem(result, language, settings.WhisperModel);
         }
         catch (OperationCanceledException)
         {
-            TranscriptionStatusText.Text = "Transcription annulée";
+            SetTranscriptionProgress("Transcription annulée", 0);
         }
         catch (Exception ex)
         {
             log.Error(ex, "Unable to transcribe.");
-            TranscriptionStatusText.Text = ex.Message;
+            SetTranscriptionProgress(ex.Message, 0);
             MessageBox.Show(this, ex.Message, "Transcription", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
@@ -396,9 +409,98 @@ public partial class MainWindow : Window
     private void UpdateTranscriptionAvailability()
     {
         var model = string.IsNullOrWhiteSpace(settings.WhisperModel) ? "small" : settings.WhisperModel;
-        TranscriptionStatusText.Text = transcription.IsReady(model)
-            ? $"Transcription prête ({model})"
-            : transcription.MissingToolsMessage(model);
+        SetTranscriptionProgress(
+            transcription.IsReady(model) ? $"Transcription prête ({model})" : transcription.MissingToolsMessage(model),
+            0);
+    }
+
+    private void SetTranscriptionProgress(string message, int percent)
+    {
+        percent = Math.Clamp(percent, 0, 100);
+        TranscriptionProgressBar.Value = percent;
+        TranscriptionPercentText.Text = $"{percent}%";
+        TranscriptionStatusText.Text = message;
+    }
+
+    private void LoadHistory()
+    {
+        historyItems.Clear();
+        foreach (var item in historyStore.Load())
+        {
+            historyItems.Add(item);
+        }
+
+        HistoryListBox.ItemsSource = historyItems;
+        UpdateHistoryEmptyState();
+    }
+
+    private void AddHistoryItem(TranscriptionResult result, string language, string model)
+    {
+        var item = new TranscriptionHistoryItem
+        {
+            FileName = Path.GetFileName(result.MediaPath),
+            MediaPath = result.MediaPath,
+            TranscriptPath = result.TranscriptPath,
+            Language = language,
+            Model = model,
+            CreatedAt = DateTime.Now,
+        };
+
+        historyItems.Clear();
+        foreach (var saved in historyStore.Add(item))
+        {
+            historyItems.Add(saved);
+        }
+
+        UpdateHistoryEmptyState();
+    }
+
+    private void UpdateHistoryEmptyState()
+    {
+        HistoryEmptyText.Visibility = historyItems.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        HistoryListBox.Visibility = historyItems.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void OnOpenHistoryMedia(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is TranscriptionHistoryItem item)
+        {
+            OpenPath(item.MediaPath);
+        }
+    }
+
+    private void OnOpenHistoryTranscript(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is TranscriptionHistoryItem item)
+        {
+            OpenPath(item.TranscriptPath);
+        }
+    }
+
+    private void OnOpenHistoryFolder(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is TranscriptionHistoryItem item)
+        {
+            var folder = Path.GetDirectoryName(item.TranscriptPath);
+            if (!string.IsNullOrWhiteSpace(folder))
+            {
+                OpenPath(folder);
+            }
+        }
+    }
+
+    private static void OpenPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || (!File.Exists(path) && !Directory.Exists(path)))
+        {
+            return;
+        }
+
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = path,
+            UseShellExecute = true,
+        });
     }
 
     protected override async void OnClosed(EventArgs e)
