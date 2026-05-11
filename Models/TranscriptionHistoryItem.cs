@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace MediaScribeRecorder.Models;
 
 public sealed class TranscriptionHistoryItem
@@ -9,5 +11,6 @@ public sealed class TranscriptionHistoryItem
     public string Model { get; set; } = "small";
     public DateTime CreatedAt { get; set; } = DateTime.Now;
 
+    [JsonIgnore]
     public string DisplayDate => CreatedAt.ToString("dd/MM/yyyy HH:mm");
 }

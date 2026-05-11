@@ -312,11 +312,11 @@
                         <StackPanel Grid.Column="0">
                           <TextBlock Text="{Binding FileName}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
                           <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="12" TextWrapping="Wrap">
-                            <Run Text="{Binding DisplayDate}"/>
+                            <Run Text="{Binding DisplayDate, Mode=OneWay}"/>
                             <Run Text=" - "/>
-                            <Run Text="{Binding Model}"/>
+                            <Run Text="{Binding Model, Mode=OneWay}"/>
                             <Run Text=" - "/>
-                            <Run Text="{Binding Language}"/>
+                            <Run Text="{Binding Language, Mode=OneWay}"/>
                           </TextBlock>
                           <TextBlock Text="{Binding MediaPath}" Foreground="{StaticResource MutedBrush}" FontSize="12" TextTrimming="CharacterEllipsis"/>
                           <TextBlock Text="{Binding TranscriptPath}" Foreground="{StaticResource MutedBrush}" FontSize="12" TextTrimming="CharacterEllipsis"/>

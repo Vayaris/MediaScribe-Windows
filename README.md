@@ -38,14 +38,14 @@ https://github.com/Vayaris/MediaScribe-Windows/releases
 Téléchargez uniquement le package portable complet :
 
 ```text
-MediaScribeRecorder-Portable-v1.1.0.zip
+MediaScribeRecorder-Portable-v1.1.1.zip
 ```
 
 Ce package contient tout ce qu'il faut côté application : l'exécutable, les outils de transcription, FFmpeg et les modèles Whisper. Après extraction, le fichier `MediaScribeRecorder.exe` est déjà présent dans le dossier.
 
 ## Utilisation
 
-1. Télécharger `MediaScribeRecorder-Portable-v1.1.0.zip`.
+1. Télécharger `MediaScribeRecorder-Portable-v1.1.1.zip`.
 2. Extraire le ZIP dans le dossier de votre choix.
 3. Lancer `MediaScribeRecorder.exe`.
 4. Choisir si le son Windows ou application doit être enregistré :
