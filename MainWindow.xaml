@@ -215,7 +215,7 @@
             <TextBlock Text="Dossier de sortie" FontWeight="SemiBold" Margin="0,0,0,8"/>
             <TextBox x:Name="OutputFolderTextBox"/>
           </StackPanel>
-          <Button Grid.Column="1" Content="Choisir" Margin="10,26,0,0" Click="OnChooseOutputFolder"/>
+          <Button Grid.Column="1" x:Name="ChooseOutputFolderButton" Content="Choisir" Margin="10,26,0,0" Click="OnChooseOutputFolder"/>
         </Grid>
 
         <Grid Grid.Row="3" Margin="0,18,0,0">
@@ -248,6 +248,7 @@
             <StackPanel Orientation="Horizontal">
               <Button x:Name="RecordButton" Content="Enregistrer" Width="150" Click="OnRecord"/>
               <Button x:Name="StopButton" Content="Stop" Width="110" Margin="10,0,0,0" Background="{StaticResource DangerBrush}" IsEnabled="False" Click="OnStop"/>
+              <Button x:Name="TestAudioButton" Content="Tester les entrées audio" Width="190" Margin="10,0,0,0" Background="#2563EB" Click="OnToggleAudioTest"/>
               <TextBlock x:Name="StatusText" Text="Prêt" VerticalAlignment="Center" Margin="18,0,0,0" FontWeight="SemiBold"/>
             </StackPanel>
             <TextBlock x:Name="CurrentFileText" Grid.Row="1" Text="" Foreground="{StaticResource MutedBrush}" Margin="0,10,0,0" TextWrapping="Wrap"/>
@@ -345,6 +346,8 @@
                             <Run Text="{Binding Model, Mode=OneWay}"/>
                             <Run Text=" - "/>
                             <Run Text="{Binding Language, Mode=OneWay}"/>
+                            <Run Text=" - "/>
+                            <Run Text="{Binding DisplayMode, Mode=OneWay}"/>
                           </TextBlock>
                           <TextBlock Text="{Binding MediaPath}" Foreground="{StaticResource MutedBrush}" FontSize="12" TextTrimming="CharacterEllipsis"/>
                           <TextBlock Text="{Binding TranscriptPath}" Foreground="{StaticResource MutedBrush}" FontSize="12" TextTrimming="CharacterEllipsis"/>

@@ -13,6 +13,7 @@ Le logiciel est pensé pour un usage simple : lancer l'exécutable, choisir les 
 - Enregistrement du micro avec tout le son du PC.
 - Enregistrement du micro avec le son d'une application ou d'une fenêtre précise, par exemple Teams, Chrome ou Edge.
 - Diagnostic clair si la capture d'application ne reçoit aucun son.
+- Test des entrées audio sans créer de fichier.
 - Choix du micro à utiliser.
 - Choix du dossier de sortie.
 - Création automatique d'un dossier par enregistrement.
@@ -23,6 +24,7 @@ Le logiciel est pensé pour un usage simple : lancer l'exécutable, choisir les 
 - Transcription automatique après enregistrement, activable ou désactivable.
 - Bouton `Réessayer` pour relancer une transcription.
 - Détection des transcriptions suspectes.
+- Transcription avec labels `Moi:` et `Ordinateur:` quand `micro.wav` et `windows.wav` existent.
 - Choix du modèle de transcription `small` ou `medium`.
 - Choix de la langue de transcription, avec le français par défaut.
 - Import et transcription de fichiers audio ou vidéo existants.
@@ -44,14 +46,14 @@ https://github.com/Vayaris/MediaScribe-Windows/releases
 Téléchargez uniquement le package portable complet :
 
 ```text
-MediaScribeRecorder-Portable-v1.2.0.zip
+MediaScribeRecorder-Portable-v1.3.0.zip
 ```
 
 Ce package contient tout ce qu'il faut côté application : l'exécutable, les outils de transcription, FFmpeg et les modèles Whisper. Après extraction, le fichier `MediaScribeRecorder.exe` est déjà présent dans le dossier.
 
 ## Utilisation
 
-1. Télécharger `MediaScribeRecorder-Portable-v1.2.0.zip`.
+1. Télécharger `MediaScribeRecorder-Portable-v1.3.0.zip`.
 2. Extraire le ZIP dans le dossier de votre choix.
 3. Lancer `MediaScribeRecorder.exe`.
 4. Choisir si le son Windows ou application doit être enregistré :
@@ -59,19 +61,23 @@ Ce package contient tout ce qu'il faut côté application : l'exécutable, les o
    - choisir `Tout le bureau` pour enregistrer tout le son du PC.
    - choisir `Application` pour enregistrer seulement une application ou une fenêtre.
 5. Choisir le micro.
-6. Choisir le dossier de sortie si besoin.
-7. Cliquer sur `Enregistrer`.
-8. Cliquer sur `Stop`.
-9. Un dossier daté est créé automatiquement dans le dossier de sortie.
-10. Le fichier `mix.wav` est créé dans ce dossier.
-11. La transcription démarre automatiquement si l'option est activée et si les outils et le modèle sont présents.
-12. Le fichier `mix.txt` est créé à côté de `mix.wav`.
+6. Cliquer sur `Tester les entrées audio` si besoin pour vérifier le micro et le son Windows/application.
+7. Cliquer sur `Stop test` pour quitter le test audio.
+8. Choisir le dossier de sortie si besoin.
+9. Cliquer sur `Enregistrer`.
+10. Cliquer sur `Stop`.
+11. Un dossier daté est créé automatiquement dans le dossier de sortie.
+12. Le fichier `mix.wav` est créé dans ce dossier.
+13. La transcription démarre automatiquement si l'option est activée et si les outils et le modèle sont présents.
+14. Le fichier `mix.txt` est créé à côté de `mix.wav`.
 
 Pendant la transcription, une barre de progression indique l'avancement de `0%` à `100%`.
 
 Si le résultat semble vide, trop court ou correspond à une phrase connue de hallucination Whisper, MediaScribe affiche un avertissement `Transcription suspecte`. Le fichier `.txt` reste créé, et le bouton `Réessayer` permet de relancer la transcription avec les réglages actuels.
 
 Si la capture `Application` ne reçoit aucun son, MediaScribe affiche une erreur claire avec le code `REC-APP-002`. Dans ce cas, utilisez `Tout le bureau`, qui reste le mode de capture le plus fiable.
+
+Le test audio ne crée aucun fichier. Tant qu'il est actif, les autres actions sont désactivées pour éviter de lancer un enregistrement ou une transcription par erreur.
 
 ## Importer et transcrire un fichier
 
@@ -114,6 +120,27 @@ medium
 ```
 
 Le modèle `medium` est plus performant que `small`, mais il demande plus de ressources et peut être plus lent sur certaines machines.
+
+Depuis la v1.3.0, `medium` est sélectionné par défaut sur une nouvelle installation. Les réglages existants ne sont pas écrasés.
+
+## Transcription par source
+
+Si l'option de pistes séparées est activée, MediaScribe crée :
+
+```text
+mix.wav
+micro.wav
+windows.wav
+```
+
+Dans ce cas, la transcription utilise les pistes séparées pour produire un texte avec labels :
+
+```text
+Moi: ...
+Ordinateur: ...
+```
+
+Si cette transcription par source échoue, MediaScribe revient automatiquement à la transcription normale de `mix.wav` et affiche un avertissement.
 
 ## Organisation portable
 

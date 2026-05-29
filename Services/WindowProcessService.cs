@@ -15,6 +15,7 @@ public sealed class WindowProcessService
     public IReadOnlyList<ProcessAudioSource> GetVisibleProcessWindows()
     {
         var results = new List<ProcessAudioSource>();
+        var parentMap = BuildParentProcessMap();
         EnumWindows((hWnd, _) =>
         {
             if (!IsWindowVisible(hWnd) || GetWindowTextLength(hWnd) == 0)
@@ -36,7 +37,8 @@ public sealed class WindowProcessService
                 using var process = Process.GetProcessById((int)processId);
                 if (!string.IsNullOrWhiteSpace(process.ProcessName))
                 {
-                    results.Add(new ProcessAudioSource((int)processId, title, process.ProcessName, ExtractIcon(process)));
+                    var captureProcessId = ResolveCaptureProcessId(process, parentMap);
+                    results.Add(new ProcessAudioSource((int)processId, captureProcessId, title, process.ProcessName, ExtractIcon(process)));
                 }
             }
             catch
@@ -53,6 +55,69 @@ public sealed class WindowProcessService
             .OrderBy(item => item.ProcessName)
             .ThenBy(item => item.Title)
             .ToList();
+    }
+
+    private static int ResolveCaptureProcessId(Process process, IReadOnlyDictionary<int, int> parentMap)
+    {
+        var selectedId = process.Id;
+        var selectedName = process.ProcessName;
+        var currentId = process.Id;
+        var visited = new HashSet<int>();
+
+        while (parentMap.TryGetValue(currentId, out var parentId) && parentId > 0 && visited.Add(parentId))
+        {
+            try
+            {
+                using var parent = Process.GetProcessById(parentId);
+                if (!parent.ProcessName.Equals(selectedName, StringComparison.OrdinalIgnoreCase))
+                {
+                    break;
+                }
+
+                selectedId = parentId;
+                currentId = parentId;
+            }
+            catch
+            {
+                break;
+            }
+        }
+
+        return selectedId;
+    }
+
+    private static IReadOnlyDictionary<int, int> BuildParentProcessMap()
+    {
+        var map = new Dictionary<int, int>();
+        var snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if (snapshot == INVALID_HANDLE_VALUE)
+        {
+            return map;
+        }
+
+        try
+        {
+            var entry = new PROCESSENTRY32
+            {
+                dwSize = (uint)Marshal.SizeOf<PROCESSENTRY32>(),
+            };
+            if (!Process32First(snapshot, ref entry))
+            {
+                return map;
+            }
+
+            do
+            {
+                map[(int)entry.th32ProcessID] = (int)entry.th32ParentProcessID;
+            }
+            while (Process32Next(snapshot, ref entry));
+        }
+        finally
+        {
+            CloseHandle(snapshot);
+        }
+
+        return map;
     }
 
     private static ImageSource? ExtractIcon(Process process)
@@ -100,4 +165,35 @@ public sealed class WindowProcessService
 
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    private const uint TH32CS_SNAPPROCESS = 0x00000002;
+    private static readonly IntPtr INVALID_HANDLE_VALUE = new(-1);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct PROCESSENTRY32
+    {
+        public uint dwSize;
+        public uint cntUsage;
+        public uint th32ProcessID;
+        public IntPtr th32DefaultHeapID;
+        public uint th32ModuleID;
+        public uint cntThreads;
+        public uint th32ParentProcessID;
+        public int pcPriClassBase;
+        public uint dwFlags;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+        public string szExeFile;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr CreateToolhelp32Snapshot(uint dwFlags, uint th32ProcessID);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool Process32First(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool Process32Next(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CloseHandle(IntPtr hObject);
 }

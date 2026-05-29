@@ -7,7 +7,7 @@ public sealed class RecordingSettings
     public string LastSystemMode { get; set; } = "desktop";
     public bool IncludeSystemAudio { get; set; } = true;
     public string TranscriptionLanguage { get; set; } = "fr";
-    public string WhisperModel { get; set; } = "small";
+    public string WhisperModel { get; set; } = "medium";
     public bool AutoTranscribeAfterRecording { get; set; } = true;
     public bool SaveSeparateTracks { get; set; }
     public double SystemGain { get; set; } = 1.25;

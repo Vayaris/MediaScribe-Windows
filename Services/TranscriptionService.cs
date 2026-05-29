@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Text;
+using System.Text.Json;
 
 namespace MediaScribeRecorder.Services;
 
@@ -69,6 +70,39 @@ public sealed class TranscriptionService
             throw new UserFacingException(MissingToolsCode(model), MissingToolsMessage(model));
         }
 
+        if (TryGetSeparateTracks(mediaPath, out var microphonePath, out var systemPath))
+        {
+            try
+            {
+                return await TranscribeSeparatedSourcesAsync(mediaPath, microphonePath, systemPath, language, model, progress, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                log.Error(ex, $"Source-separated transcription failed for {mediaPath}. Falling back to mix.");
+                progress?.Report(new TranscriptionProgress("Séparation des sources impossible, transcription du mix", 10, "fallback"));
+                var fallback = await TranscribeSingleAsync(mediaPath, language, model, progress, cancellationToken).ConfigureAwait(false);
+                return fallback with
+                {
+                    IsSuspicious = true,
+                    SuspicionReason = string.IsNullOrWhiteSpace(fallback.SuspicionReason)
+                        ? "Transcription par source impossible, fallback sur le mix."
+                        : fallback.SuspicionReason + " Transcription par source impossible, fallback sur le mix.",
+                    TranscriptMode = "Transcript normal",
+                };
+            }
+        }
+
+        return await TranscribeSingleAsync(mediaPath, language, model, progress, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<TranscriptionResult> TranscribeSingleAsync(
+        string mediaPath,
+        string language,
+        string model,
+        IProgress<TranscriptionProgress>? progress,
+        CancellationToken cancellationToken)
+    {
         var outputPrefix = Path.Combine(
             Path.GetDirectoryName(mediaPath) ?? paths.Recordings,
             Path.GetFileNameWithoutExtension(mediaPath));
@@ -143,7 +177,7 @@ public sealed class TranscriptionService
             var suspicion = DetectSuspicion(rawText, text, duration);
             await File.WriteAllTextAsync(transcriptPath, text + Environment.NewLine, Encoding.UTF8, cancellationToken).ConfigureAwait(false);
             progress?.Report(new TranscriptionProgress("Terminé", 100, "done"));
-            return new TranscriptionResult(mediaPath, transcriptPath, text, suspicion.IsSuspicious, suspicion.Reason);
+            return new TranscriptionResult(mediaPath, transcriptPath, text, suspicion.IsSuspicious, suspicion.Reason, "Transcript normal");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -160,6 +194,123 @@ public sealed class TranscriptionService
             {
             }
         }
+    }
+
+    private async Task<TranscriptionResult> TranscribeSeparatedSourcesAsync(
+        string mixPath,
+        string microphonePath,
+        string systemPath,
+        string language,
+        string model,
+        IProgress<TranscriptionProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        var transcriptPath = Path.Combine(Path.GetDirectoryName(mixPath) ?? paths.Recordings, "mix.txt");
+        var tempDir = Path.Combine(Path.GetTempPath(), "mediascribe-recorder-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            progress?.Report(new TranscriptionProgress("Préparation des pistes séparées", 0, "prepare"));
+            var microphonePrepared = Path.Combine(tempDir, "micro.wav");
+            var systemPrepared = Path.Combine(tempDir, "windows.wav");
+            var microphoneDuration = await GetMediaDurationAsync(microphonePath, cancellationToken).ConfigureAwait(false);
+            var systemDuration = await GetMediaDurationAsync(systemPath, cancellationToken).ConfigureAwait(false);
+
+            await RunProcessAsync(
+                FfmpegPath,
+                ["-y", "-i", microphonePath, "-progress", "pipe:1", "-nostats", "-vn", "-ac", "1", "-ar", "16000", microphonePrepared],
+                progress,
+                line => ParseFfmpegProgress(line, microphoneDuration),
+                cancellationToken).ConfigureAwait(false);
+
+            await RunProcessAsync(
+                FfmpegPath,
+                ["-y", "-i", systemPath, "-progress", "pipe:1", "-nostats", "-vn", "-ac", "1", "-ar", "16000", systemPrepared],
+                progress,
+                line => ParseFfmpegProgress(line, systemDuration),
+                cancellationToken).ConfigureAwait(false);
+
+            var microphonePrefix = Path.Combine(tempDir, "micro-transcript");
+            var systemPrefix = Path.Combine(tempDir, "windows-transcript");
+            progress?.Report(new TranscriptionProgress("Transcription micro", 15, "whisper"));
+            await RunWhisperAsync(microphonePrepared, microphonePrefix, language, model, outputJson: true, progress, cancellationToken).ConfigureAwait(false);
+            progress?.Report(new TranscriptionProgress("Transcription ordinateur", 55, "whisper"));
+            await RunWhisperAsync(systemPrepared, systemPrefix, language, model, outputJson: true, progress, cancellationToken).ConfigureAwait(false);
+
+            var segments = new List<LabeledTranscriptSegment>();
+            segments.AddRange(ParseJsonSegments(microphonePrefix + ".json", "Moi"));
+            segments.AddRange(ParseJsonSegments(systemPrefix + ".json", "Ordinateur"));
+            segments = segments
+                .Where(segment => !string.IsNullOrWhiteSpace(segment.Text))
+                .OrderBy(segment => segment.StartSeconds)
+                .ThenBy(segment => segment.Speaker)
+                .ToList();
+
+            if (segments.Count == 0)
+            {
+                throw new InvalidOperationException("Aucun segment exploitable dans les pistes séparées.");
+            }
+
+            var text = MergeLabeledSegments(segments);
+            var suspicion = DetectSuspicion(text, text, Math.Max(microphoneDuration ?? 0, systemDuration ?? 0));
+            await File.WriteAllTextAsync(transcriptPath, text + Environment.NewLine, Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+            progress?.Report(new TranscriptionProgress("Terminé", 100, "done"));
+            return new TranscriptionResult(mixPath, transcriptPath, text, suspicion.IsSuspicious, suspicion.Reason, "Avec séparation des sources");
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private async Task RunWhisperAsync(
+        string preparedWav,
+        string outputPrefix,
+        string language,
+        string model,
+        bool outputJson,
+        IProgress<TranscriptionProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        var selectedModel = ModelPath(model);
+        var normalizedLanguage = string.IsNullOrWhiteSpace(language) ? "fr" : language.Trim();
+        var whisperArgs = new List<string>
+        {
+            "-m", selectedModel,
+            "-f", preparedWav,
+        };
+        if (!normalizedLanguage.Equals("auto", StringComparison.OrdinalIgnoreCase))
+        {
+            whisperArgs.Add("-l");
+            whisperArgs.Add(normalizedLanguage);
+        }
+
+        whisperArgs.Add("-sns");
+        if (NormalizeModel(model) == "medium")
+        {
+            whisperArgs.Add("-nf");
+        }
+        else
+        {
+            whisperArgs.Add("-lpt");
+            whisperArgs.Add("-0.30");
+        }
+
+        whisperArgs.Add(outputJson ? "-oj" : "-otxt");
+        if (outputJson)
+        {
+            whisperArgs.Add("-ojf");
+        }
+
+        whisperArgs.AddRange(["-of", outputPrefix, "-pp"]);
+        await RunProcessAsync(WhisperPath, whisperArgs, progress, ParseWhisperProgress, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task RunProcessAsync(
@@ -380,6 +531,162 @@ public sealed class TranscriptionService
         return new TranscriptionSuspicion(false, "");
     }
 
+    private static bool TryGetSeparateTracks(string mediaPath, out string microphonePath, out string systemPath)
+    {
+        var folder = Path.GetDirectoryName(mediaPath) ?? "";
+        var fileName = Path.GetFileName(mediaPath);
+        microphonePath = Path.Combine(folder, "micro.wav");
+        systemPath = Path.Combine(folder, "windows.wav");
+        return fileName.Equals("mix.wav", StringComparison.OrdinalIgnoreCase)
+            && File.Exists(microphonePath)
+            && File.Exists(systemPath);
+    }
+
+    private static IReadOnlyList<LabeledTranscriptSegment> ParseJsonSegments(string jsonPath, string speaker)
+    {
+        if (!File.Exists(jsonPath))
+        {
+            return [];
+        }
+
+        using var document = JsonDocument.Parse(File.ReadAllText(jsonPath));
+        var segments = new List<LabeledTranscriptSegment>();
+        CollectSegments(document.RootElement, speaker, segments);
+        return segments;
+    }
+
+    private static void CollectSegments(JsonElement element, string speaker, List<LabeledTranscriptSegment> segments)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            if (TryReadSegment(element, speaker, out var segment))
+            {
+                segments.Add(segment);
+                return;
+            }
+
+            foreach (var property in element.EnumerateObject())
+            {
+                CollectSegments(property.Value, speaker, segments);
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+            {
+                CollectSegments(item, speaker, segments);
+            }
+        }
+    }
+
+    private static bool TryReadSegment(JsonElement element, string speaker, out LabeledTranscriptSegment segment)
+    {
+        segment = default;
+        if (!TryGetStringProperty(element, "text", out var text))
+        {
+            return false;
+        }
+
+        text = CleanTranscript(text);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        var start = 0d;
+        var end = 0d;
+        if (element.TryGetProperty("timestamps", out var timestamps) && timestamps.ValueKind == JsonValueKind.Object)
+        {
+            if (TryGetStringProperty(timestamps, "from", out var from))
+            {
+                start = ParseTimestampSeconds(from);
+            }
+
+            if (TryGetStringProperty(timestamps, "to", out var to))
+            {
+                end = ParseTimestampSeconds(to);
+            }
+        }
+
+        if (start <= 0 && TryGetNumberProperty(element, "start", out var numericStart))
+        {
+            start = numericStart;
+        }
+
+        if (end <= 0 && TryGetNumberProperty(element, "end", out var numericEnd))
+        {
+            end = numericEnd;
+        }
+
+        segment = new LabeledTranscriptSegment(speaker, start, end, text);
+        return true;
+    }
+
+    private static bool TryGetStringProperty(JsonElement element, string propertyName, out string value)
+    {
+        value = "";
+        if (!element.TryGetProperty(propertyName, out var property) || property.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        value = property.GetString() ?? "";
+        return !string.IsNullOrWhiteSpace(value);
+    }
+
+    private static bool TryGetNumberProperty(JsonElement element, string propertyName, out double value)
+    {
+        value = 0;
+        return element.TryGetProperty(propertyName, out var property)
+            && property.ValueKind == JsonValueKind.Number
+            && property.TryGetDouble(out value);
+    }
+
+    private static double ParseTimestampSeconds(string value)
+    {
+        value = value.Trim().Replace(',', '.');
+        var parts = value.Split(':');
+        if (parts.Length == 3
+            && double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds)
+            && int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var minutes)
+            && int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var hours))
+        {
+            return hours * 3600 + minutes * 60 + seconds;
+        }
+
+        return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var rawSeconds)
+            ? rawSeconds
+            : 0;
+    }
+
+    private static string MergeLabeledSegments(IReadOnlyList<LabeledTranscriptSegment> segments)
+    {
+        var builder = new StringBuilder();
+        string? activeSpeaker = null;
+        foreach (var segment in segments)
+        {
+            if (!segment.Speaker.Equals(activeSpeaker, StringComparison.OrdinalIgnoreCase))
+            {
+                if (builder.Length > 0)
+                {
+                    builder.AppendLine();
+                }
+
+                builder.Append(segment.Speaker);
+                builder.Append(": ");
+                builder.Append(segment.Text);
+                activeSpeaker = segment.Speaker;
+            }
+            else
+            {
+                builder.Append(' ');
+                builder.Append(segment.Text);
+            }
+        }
+
+        return builder.ToString().Trim();
+    }
+
     private static string NormalizeModel(string model)
     {
         return model.Equals("medium", StringComparison.OrdinalIgnoreCase) ? "medium" : "small";
@@ -391,6 +698,7 @@ public sealed class TranscriptionService
     }
 }
 
-public sealed record TranscriptionResult(string MediaPath, string TranscriptPath, string Text, bool IsSuspicious, string SuspicionReason);
+public sealed record TranscriptionResult(string MediaPath, string TranscriptPath, string Text, bool IsSuspicious, string SuspicionReason, string TranscriptMode);
 public sealed record TranscriptionProgress(string Message, int? Percent, string Stage);
 internal sealed record TranscriptionSuspicion(bool IsSuspicious, string Reason);
+internal readonly record struct LabeledTranscriptSegment(string Speaker, double StartSeconds, double EndSeconds, string Text);

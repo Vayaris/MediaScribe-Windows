@@ -25,7 +25,7 @@ public partial class SettingsWindow : Window
 
         SystemGainSlider.Value = Settings.SystemGain;
         MicrophoneGainSlider.Value = Settings.MicrophoneGain;
-        ModelComboBox.SelectedValue = string.IsNullOrWhiteSpace(Settings.WhisperModel) ? "small" : Settings.WhisperModel;
+        ModelComboBox.SelectedValue = string.IsNullOrWhiteSpace(Settings.WhisperModel) ? "medium" : Settings.WhisperModel;
         AutoTranscribeCheckBox.IsChecked = Settings.AutoTranscribeAfterRecording;
         SaveSeparateTracksCheckBox.IsChecked = Settings.SaveSeparateTracks;
         UpdateGainLabels();
@@ -58,7 +58,7 @@ public partial class SettingsWindow : Window
     {
         Settings.SystemGain = Math.Round(SystemGainSlider.Value, 2);
         Settings.MicrophoneGain = Math.Round(MicrophoneGainSlider.Value, 2);
-        Settings.WhisperModel = ModelComboBox.SelectedValue as string ?? "small";
+        Settings.WhisperModel = ModelComboBox.SelectedValue as string ?? "medium";
         Settings.AutoTranscribeAfterRecording = AutoTranscribeCheckBox.IsChecked == true;
         Settings.SaveSeparateTracks = SaveSeparateTracksCheckBox.IsChecked == true;
         DialogResult = true;

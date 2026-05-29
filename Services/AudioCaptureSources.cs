@@ -96,6 +96,8 @@ public sealed class ProcessLoopbackCaptureSource : IAudioCaptureSource
     private Process? process;
     private CancellationTokenSource? readerCts;
     private Task? readerTask;
+    private readonly object errorSync = new();
+    private readonly List<string> errorLines = [];
     private TaskCompletionSource<bool> firstData = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public ProcessLoopbackCaptureSource(int processId)
@@ -108,6 +110,17 @@ public sealed class ProcessLoopbackCaptureSource : IAudioCaptureSource
     public int ProcessId { get; }
     public WaveFormat WaveFormat { get; }
     public bool HasReceivedAudio { get; private set; }
+    public string DiagnosticError
+    {
+        get
+        {
+            lock (errorSync)
+            {
+                return string.Join(Environment.NewLine, errorLines.TakeLast(20));
+            }
+        }
+    }
+
     public event EventHandler<WaveInEventArgs>? DataAvailable;
     public event EventHandler<StoppedEventArgs>? RecordingStopped;
 
@@ -136,6 +149,19 @@ public sealed class ProcessLoopbackCaptureSource : IAudioCaptureSource
         try
         {
             process = Process.Start(startInfo) ?? throw new UserFacingException("REC-APP-001", "Impossible de démarrer la capture application.");
+            process.ErrorDataReceived += (_, e) =>
+            {
+                if (string.IsNullOrWhiteSpace(e.Data))
+                {
+                    return;
+                }
+
+                lock (errorSync)
+                {
+                    errorLines.Add(e.Data.Trim());
+                }
+            };
+            process.BeginErrorReadLine();
         }
         catch (UserFacingException)
         {
@@ -217,8 +243,10 @@ public sealed class ProcessLoopbackCaptureSource : IAudioCaptureSource
 
             if (activeProcess.HasExited && activeProcess.ExitCode != 0)
             {
-                var error = await activeProcess.StandardError.ReadToEndAsync().ConfigureAwait(false);
-                RecordingStopped?.Invoke(this, new StoppedEventArgs(new InvalidOperationException(error.Trim())));
+                var error = DiagnosticError;
+                RecordingStopped?.Invoke(this, new StoppedEventArgs(new InvalidOperationException(string.IsNullOrWhiteSpace(error)
+                    ? $"MediaScribeProcessLoopback.exe s'est arrêté avec le code {activeProcess.ExitCode}."
+                    : error.Trim())));
             }
             else
             {

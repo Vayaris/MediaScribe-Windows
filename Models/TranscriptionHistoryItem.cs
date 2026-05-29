@@ -13,6 +13,7 @@ public sealed class TranscriptionHistoryItem
     public string RecordingFolder { get; set; } = "";
     public string Language { get; set; } = "fr";
     public string Model { get; set; } = "small";
+    public string TranscriptMode { get; set; } = "Transcript normal";
     public bool IsSuspicious { get; set; }
     public string SuspicionReason { get; set; } = "";
     public DateTime CreatedAt { get; set; } = DateTime.Now;
@@ -22,6 +23,9 @@ public sealed class TranscriptionHistoryItem
 
     [JsonIgnore]
     public string DisplayWarning => IsSuspicious ? "Transcription suspecte" : "";
+
+    [JsonIgnore]
+    public string DisplayMode => string.IsNullOrWhiteSpace(TranscriptMode) ? "Transcript normal" : TranscriptMode;
 
     [JsonIgnore]
     public string PreviewPath => !string.IsNullOrWhiteSpace(MixPath) ? MixPath : MediaPath;

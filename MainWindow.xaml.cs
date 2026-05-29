@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     private readonly TranscriptionService transcription;
     private RecordingSettings settings;
     private RecordingSession? session;
+    private AudioMonitorSession? monitorSession;
     private CancellationTokenSource? transcriptionCts;
     private readonly ObservableCollection<TranscriptionHistoryItem> historyItems = [];
     private readonly MediaPlayer previewPlayer = new();
@@ -30,6 +31,7 @@ public partial class MainWindow : Window
     private double displayedSystemLevel;
     private double displayedMicrophoneLevel;
     private bool isPreviewPlaying;
+    private bool isAudioTesting;
     private bool isInitialized;
 
     public MainWindow()
@@ -164,31 +166,9 @@ public partial class MainWindow : Window
             var outputPath = Path.Combine(recordingFolder, "mix.wav");
             var systemOutputPath = settings.SaveSeparateTracks ? Path.Combine(recordingFolder, "windows.wav") : null;
             var microphoneOutputPath = settings.SaveSeparateTracks ? Path.Combine(recordingFolder, "micro.wav") : null;
-            var micDevice = audioDevices.GetCaptureDevice(settings.MicrophoneDeviceId);
-            IAudioCaptureSource micCapture = new WasapiCaptureSource(micDevice);
-            IAudioCaptureSource systemCapture;
-            ProcessLoopbackCaptureSource? processCapture = null;
+            var sources = CreateCaptureSources();
 
-            if (IncludeSystemAudioCheckBox.IsChecked != true)
-            {
-                systemCapture = new SilentCaptureSource();
-            }
-            else if (ApplicationModeRadio.IsChecked == true)
-            {
-                if (ProcessComboBox.SelectedItem is not ProcessAudioSource selectedProcess)
-                {
-                    throw new InvalidOperationException("Choisissez une application à enregistrer.");
-                }
-
-                processCapture = new ProcessLoopbackCaptureSource(selectedProcess.ProcessId);
-                systemCapture = processCapture;
-            }
-            else
-            {
-                systemCapture = new WasapiLoopbackCaptureSource(audioDevices.GetDefaultRenderDevice());
-            }
-
-            session = new RecordingSession(systemCapture, micCapture, outputPath, systemOutputPath, microphoneOutputPath, log, settings.SystemGain, settings.MicrophoneGain);
+            session = new RecordingSession(sources.SystemCapture, sources.MicrophoneCapture, outputPath, systemOutputPath, microphoneOutputPath, log, settings.SystemGain, settings.MicrophoneGain);
             session.LevelsUpdated += OnLevelsUpdated;
             session.WarningRaised += (_, warning) => Dispatcher.Invoke(() => StatusText.Text = warning);
             session.Start();
@@ -198,9 +178,9 @@ public partial class MainWindow : Window
             StatusText.Text = "Enregistrement";
             CurrentFileText.Text = outputPath;
 
-            if (processCapture is not null && !await processCapture.WaitForAudioAsync(TimeSpan.FromSeconds(3), CancellationToken.None))
+            if (sources.ProcessCapture is not null && !await sources.ProcessCapture.WaitForAudioAsync(TimeSpan.FromSeconds(3), CancellationToken.None))
             {
-                var warning = "REC-APP-002 - Capture application démarrée, mais aucun son n'a été reçu. Lancez du son dans cette application ou utilisez Tout le bureau.";
+                var warning = BuildNoApplicationAudioWarning(sources);
                 log.Info(warning);
                 await StopCurrentSession(returnOutput: false);
                 MessageBox.Show(this, warning, "Capture application", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -255,6 +235,149 @@ public partial class MainWindow : Window
         displayedSystemLevel = 0;
         displayedMicrophoneLevel = 0;
         return returnOutput ? outputPath : null;
+    }
+
+    private async void OnToggleAudioTest(object sender, RoutedEventArgs e)
+    {
+        if (isAudioTesting)
+        {
+            await StopAudioTestAsync();
+            return;
+        }
+
+        try
+        {
+            SaveCurrentSettings();
+            var sources = CreateCaptureSources();
+            monitorSession = new AudioMonitorSession(sources.SystemCapture, sources.MicrophoneCapture, log, settings.SystemGain, settings.MicrophoneGain);
+            monitorSession.LevelsUpdated += OnLevelsUpdated;
+            monitorSession.WarningRaised += (_, warning) => Dispatcher.Invoke(() => StatusText.Text = warning);
+            monitorSession.Start();
+
+            isAudioTesting = true;
+            SetAudioTestUi(true);
+            StatusText.Text = "Test audio en cours";
+            CurrentFileText.Text = "Aucun fichier n'est créé pendant le test.";
+
+            if (sources.ProcessCapture is not null && !await sources.ProcessCapture.WaitForAudioAsync(TimeSpan.FromSeconds(3), CancellationToken.None))
+            {
+                var warning = BuildNoApplicationAudioWarning(sources);
+                log.Info(warning);
+                StatusText.Text = warning;
+            }
+        }
+        catch (Exception ex)
+        {
+            log.Error(ex, "Unable to start audio input test.");
+            await StopAudioTestAsync();
+            MessageBox.Show(this, ex.Message, "Test audio", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async Task StopAudioTestAsync()
+    {
+        var active = monitorSession;
+        monitorSession = null;
+        if (active is not null)
+        {
+            await active.StopAsync();
+            active.Dispose();
+        }
+
+        isAudioTesting = false;
+        SetAudioTestUi(false);
+        StatusText.Text = "Prêt";
+        CurrentFileText.Text = "";
+        SystemLevelBar.Value = 0;
+        MicLevelBar.Value = 0;
+        SystemLevelText.Text = "0%";
+        MicLevelText.Text = "0%";
+        displayedSystemLevel = 0;
+        displayedMicrophoneLevel = 0;
+    }
+
+    private CaptureSourceBundle CreateCaptureSources()
+    {
+        var micDevice = audioDevices.GetCaptureDevice(settings.MicrophoneDeviceId);
+        IAudioCaptureSource micCapture = new WasapiCaptureSource(micDevice);
+        IAudioCaptureSource systemCapture;
+        ProcessLoopbackCaptureSource? processCapture = null;
+        ProcessAudioSource? selectedProcess = null;
+
+        try
+        {
+            if (IncludeSystemAudioCheckBox.IsChecked != true)
+            {
+                systemCapture = new SilentCaptureSource();
+            }
+            else if (ApplicationModeRadio.IsChecked == true)
+            {
+                if (ProcessComboBox.SelectedItem is not ProcessAudioSource process)
+                {
+                    throw new UserFacingException("REC-APP-003", "Choisissez une application à enregistrer.");
+                }
+
+                selectedProcess = process;
+                EnsureProcessExists(selectedProcess.CaptureProcessId);
+                processCapture = new ProcessLoopbackCaptureSource(selectedProcess.CaptureProcessId);
+                systemCapture = processCapture;
+            }
+            else
+            {
+                systemCapture = new WasapiLoopbackCaptureSource(audioDevices.GetDefaultRenderDevice());
+            }
+        }
+        catch
+        {
+            micCapture.Dispose();
+            throw;
+        }
+
+        return new CaptureSourceBundle(systemCapture, micCapture, processCapture, selectedProcess);
+    }
+
+    private static void EnsureProcessExists(int processId)
+    {
+        try
+        {
+            using var _ = Process.GetProcessById(processId);
+        }
+        catch (Exception ex)
+        {
+            throw new UserFacingException("REC-APP-003", "L'application sélectionnée n'est plus disponible. Cliquez sur Actualiser puis choisissez-la à nouveau.", ex);
+        }
+    }
+
+    private static string BuildNoApplicationAudioWarning(CaptureSourceBundle sources)
+    {
+        var target = sources.SelectedProcess is null
+            ? "l'application sélectionnée"
+            : $"{sources.SelectedProcess.ProcessName} (fenêtre PID {sources.SelectedProcess.ProcessId}, capture PID {sources.SelectedProcess.CaptureProcessId})";
+        var diagnostic = sources.ProcessCapture?.DiagnosticError;
+        return string.IsNullOrWhiteSpace(diagnostic)
+            ? $"REC-APP-002 - Aucun son reçu depuis {target}. Lancez du son dans cette application ou utilisez Tout le bureau."
+            : $"REC-APP-002 - Aucun son reçu depuis {target}. Détail: {diagnostic}. Lancez du son dans cette application ou utilisez Tout le bureau.";
+    }
+
+    private void SetAudioTestUi(bool testing)
+    {
+        TestAudioButton.Content = testing ? "Stop test" : "Tester les entrées audio";
+        RecordButton.IsEnabled = !testing;
+        StopButton.IsEnabled = false;
+        IncludeSystemAudioCheckBox.IsEnabled = !testing;
+        SystemModePanel.IsEnabled = !testing && IncludeSystemAudioCheckBox.IsChecked == true;
+        ProcessComboBox.IsEnabled = !testing && IncludeSystemAudioCheckBox.IsChecked == true && ApplicationModeRadio.IsChecked == true;
+        RefreshProcessesButton.IsEnabled = !testing && IncludeSystemAudioCheckBox.IsChecked == true && ApplicationModeRadio.IsChecked == true;
+        MicrophoneComboBox.IsEnabled = !testing;
+        OutputFolderTextBox.IsEnabled = !testing;
+        ChooseOutputFolderButton.IsEnabled = !testing;
+        SettingsButton.IsEnabled = !testing;
+        ImportTranscribeButton.IsEnabled = !testing;
+        CancelTranscriptionButton.IsEnabled = !testing && transcriptionCts is not null;
+        CopyTranscriptButton.IsEnabled = !testing && !string.IsNullOrWhiteSpace(TranscriptTextBox.Text);
+        OpenTranscriptButton.IsEnabled = !testing && !string.IsNullOrWhiteSpace(currentTranscriptPath) && File.Exists(currentTranscriptPath);
+        RetryTranscriptionButton.IsEnabled = !testing && !string.IsNullOrWhiteSpace(currentMediaPath) && File.Exists(currentMediaPath);
+        LanguageComboBox.IsEnabled = !testing;
     }
 
     private void OnLevelsUpdated(object? sender, RecordingLevelsEventArgs e)
@@ -389,7 +512,7 @@ public partial class MainWindow : Window
             TranscriptTextBox.Text = result.Text;
             currentTranscriptPath = result.TranscriptPath;
             TranscriptFileText.Text = result.TranscriptPath;
-            SetTranscriptionProgress(result.IsSuspicious ? "Transcription terminée avec avertissement" : "Transcription terminée", 100);
+            SetTranscriptionProgress(result.IsSuspicious ? $"{result.TranscriptMode} - terminé avec avertissement" : $"{result.TranscriptMode} - terminé", 100);
             if (result.IsSuspicious)
             {
                 SuspiciousTranscriptionText.Text = "Transcription suspecte: " + result.SuspicionReason;
@@ -457,6 +580,12 @@ public partial class MainWindow : Window
 
     private void SetTranscriptionBusy(bool busy)
     {
+        if (isAudioTesting)
+        {
+            SetAudioTestUi(true);
+            return;
+        }
+
         ImportTranscribeButton.IsEnabled = !busy;
         CancelTranscriptionButton.IsEnabled = busy;
         LanguageComboBox.IsEnabled = !busy;
@@ -465,7 +594,7 @@ public partial class MainWindow : Window
 
     private void UpdateTranscriptionAvailability()
     {
-        var model = string.IsNullOrWhiteSpace(settings.WhisperModel) ? "small" : settings.WhisperModel;
+        var model = string.IsNullOrWhiteSpace(settings.WhisperModel) ? "medium" : settings.WhisperModel;
         var ready = transcription.IsReady(model);
         SetTranscriptionProgress(
             ready ? $"Transcription prête ({model})" : $"{transcription.MissingToolsCode(model)} - {transcription.MissingToolsMessage(model)}",
@@ -511,6 +640,7 @@ public partial class MainWindow : Window
             RecordingFolder = mediaFolder,
             Language = language,
             Model = model,
+            TranscriptMode = result.TranscriptMode,
             IsSuspicious = result.IsSuspicious,
             SuspicionReason = result.SuspicionReason,
             CreatedAt = DateTime.Now,
@@ -712,7 +842,14 @@ public partial class MainWindow : Window
         transcriptionCts?.Cancel();
         previewTimer.Stop();
         previewPlayer.Close();
+        await StopAudioTestAsync();
         await StopCurrentSession(returnOutput: false);
         base.OnClosed(e);
     }
+
+    private sealed record CaptureSourceBundle(
+        IAudioCaptureSource SystemCapture,
+        IAudioCaptureSource MicrophoneCapture,
+        ProcessLoopbackCaptureSource? ProcessCapture,
+        ProcessAudioSource? SelectedProcess);
 }
